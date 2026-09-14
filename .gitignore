@@ -8,3 +8,8 @@ reviews/
 stdout.txt
 stderr.txt
 *.log
+
+QA.Regression.Automation/bin/
+QA.Regression.Automation/obj/
+QA.Regression.Automation/TestResults/
+QA.Regression.Automation/Tests/Generated/**/automation-manifest.json

@@ -1,0 +1,62 @@
+trigger: none
+pr: none
+
+parameters:
+- name: testPlan
+  displayName: Azure Test Plan ID
+  type: string
+  default: '30985'
+- name: testSuite
+  displayName: Azure Test Suite ID
+  type: string
+  default: '31681'
+- name: testConfiguration
+  displayName: Azure Test Configuration ID
+  type: string
+  default: '1'
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  buildConfiguration: Release
+
+steps:
+- task: UseDotNet@2
+  displayName: Use .NET 10 SDK
+  inputs:
+    packageType: sdk
+    version: 10.0.x
+
+- task: DotNetCoreCLI@2
+  displayName: Restore NuGet packages
+  inputs:
+    command: restore
+    projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+
+- task: DotNetCoreCLI@2
+  displayName: Build test project
+  inputs:
+    command: build
+    projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+    arguments: --configuration $(buildConfiguration) --no-restore
+
+- task: PowerShell@2
+  displayName: Install Playwright browsers
+  inputs:
+    targetType: inline
+    script: |
+      pwsh .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
+
+- task: VSTest@3
+  displayName: Run associated tests from Azure Test Plan
+  inputs:
+    testSelector: testPlan
+    testPlan: ${{ parameters.testPlan }}
+    testSuite: ${{ parameters.testSuite }}
+    testConfiguration: ${{ parameters.testConfiguration }}
+    searchFolder: '$(System.DefaultWorkingDirectory)\QA.Regression.Automation'
+    uiTests: true
+    vsTestVersion: toolsInstaller
+    runInParallel: false
+    publishRunAttachments: true

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 import re
 import time
+import uuid
 
 import requests
 
@@ -936,7 +937,18 @@ class AzureDevOpsClient:
         return count
 
     def get_test_case(self, test_case_id: int) -> dict[str, Any]:
-        fields = ["System.Title", "System.State", "System.Description", "Microsoft.VSTS.TCM.Steps", "Microsoft.VSTS.Common.Priority"]
+        fields = [
+            "System.Title",
+            "System.State",
+            "System.Description",
+            "Microsoft.VSTS.TCM.Steps",
+            "Microsoft.VSTS.Common.Priority",
+            "Microsoft.VSTS.TCM.AutomatedTestId",
+            "Microsoft.VSTS.TCM.AutomatedTestName",
+            "Microsoft.VSTS.TCM.AutomatedTestStorage",
+            "Microsoft.VSTS.TCM.AutomatedTestType",
+            "Microsoft.VSTS.TCM.AutomationStatus",
+        ]
         data = self._get(
             f"/_apis/wit/workitems/{test_case_id}",
             params={"fields": ",".join(fields), "api-version": "7.1"},
@@ -950,7 +962,44 @@ class AzureDevOpsClient:
             "description": f.get("System.Description"),
             "steps": f.get("Microsoft.VSTS.TCM.Steps"),
             "priority": f.get("Microsoft.VSTS.Common.Priority"),
+            "automated_test_id": f.get("Microsoft.VSTS.TCM.AutomatedTestId"),
+            "automated_test_name": f.get("Microsoft.VSTS.TCM.AutomatedTestName"),
+            "automated_test_storage": f.get("Microsoft.VSTS.TCM.AutomatedTestStorage"),
+            "automated_test_type": f.get("Microsoft.VSTS.TCM.AutomatedTestType"),
+            "automation_status": f.get("Microsoft.VSTS.TCM.AutomationStatus"),
         }
+
+    def associate_automated_test(
+        self,
+        test_case_id: int,
+        *,
+        automated_test_name: str,
+        automated_test_storage: str,
+        automated_test_type: str = "NUnit",
+        automated_test_id: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_name = automated_test_name.strip()
+        normalized_storage = automated_test_storage.strip()
+        normalized_type = automated_test_type.strip() or "NUnit"
+
+        if not normalized_name:
+            raise ValueError("Automated test name is required.")
+        if not normalized_storage:
+            raise ValueError("Automated test storage is required.")
+
+        test_id = (automated_test_id or "").strip().upper()
+        if not test_id:
+            identity = f"{normalized_storage}|{normalized_type}|{normalized_name}"
+            test_id = str(uuid.uuid5(uuid.NAMESPACE_URL, identity)).upper()
+
+        patch_document = [
+            {"op": "add", "path": "/fields/Microsoft.VSTS.TCM.AutomatedTestName", "value": normalized_name},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.TCM.AutomatedTestStorage", "value": normalized_storage},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.TCM.AutomatedTestType", "value": normalized_type},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.TCM.AutomatedTestId", "value": test_id},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.TCM.AutomationStatus", "value": "Automated"},
+        ]
+        return self.update_work_item(test_case_id, patch_document)
 
     def update_work_item(
         self,
