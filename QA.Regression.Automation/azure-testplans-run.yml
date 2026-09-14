@@ -16,7 +16,7 @@ parameters:
   default: '1'
 
 pool:
-  vmImage: windows-latest
+  name: Default
 
 variables:
   buildConfiguration: Release
@@ -46,7 +46,7 @@ steps:
   inputs:
     targetType: inline
     script: |
-      pwsh .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
+      & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
 
 - task: VisualStudioTestPlatformInstaller@1
   displayName: Install Visual Studio Test Platform
