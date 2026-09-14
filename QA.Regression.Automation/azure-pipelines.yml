@@ -53,10 +53,10 @@ steps:
   inputs:
     testSelector: testAssemblies
     testAssemblyVer2: |
-      QA.Regression.Automation\**\*QA.Regression.Automation.dll
+      **\bin\$(buildConfiguration)\net10.0\QA.Regression.Automation.dll
       !**\*TestAdapter.dll
-      !QA.Regression.Automation\**\obj\**
-    searchFolder: '$(System.DefaultWorkingDirectory)\QA.Regression.Automation'
+      !**\obj\**
+    searchFolder: '$(System.DefaultWorkingDirectory)'
     runInParallel: true
     publishRunAttachments: true
     vsTestVersion: toolsInstaller
