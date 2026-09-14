@@ -42,6 +42,12 @@ steps:
     script: |
       pwsh .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
 
+- task: VisualStudioTestPlatformInstaller@1
+  displayName: Install Visual Studio Test Platform
+  inputs:
+    packageFeedSelector: nugetOrg
+    versionSelector: latestStable
+
 - task: VSTest@3
   displayName: Execute tests and publish ADO results
   inputs:
