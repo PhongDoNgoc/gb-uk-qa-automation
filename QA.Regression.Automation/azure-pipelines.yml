@@ -10,10 +10,11 @@ trigger:
 - main
 
 pool:
-  name: Default
+  vmImage: windows-latest
 
 variables:
   buildConfiguration: Release
+  VIEWPOINT_BASE_URL: https://viewpoint.gridbeyond.com/
 
 steps:
 - task: UseDotNet@2

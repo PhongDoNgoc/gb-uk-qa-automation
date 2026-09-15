@@ -254,7 +254,10 @@ def _detect_strategy(test_case: SuiteTestCase) -> str:
     all_text = " ".join(
         [test_case.title] + [step.action for step in test_case.steps] + [step.expected for step in test_case.steps]
     ).lower()
-    has_credentials = "username:" in all_text and "password:" in all_text
+    has_credentials = (
+        ("username:" in all_text or "email address:" in all_text or "email:" in all_text)
+        and "password:" in all_text
+    )
     has_sign_in = "sign in" in all_text or "login" in all_text or "log in" in all_text
     return "login" if has_credentials and has_sign_in else "generic"
 
@@ -318,13 +321,15 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
         password = password or step_password
 
     lines = [
+        'var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")',
+        f'    ?? "{_escape_csharp_string(login_url)}";',
         'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
         f'    ?? "{_escape_csharp_string(username)}";',
         'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
         f'    ?? "{_escape_csharp_string(password)}";',
         "var loginPage = new LoginPage(Page);",
         "",
-        f'await loginPage.GoToAsync("{_escape_csharp_string(login_url)}");',
+        "await loginPage.GoToAsync(baseUrl);",
         "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
         f'    "{_escape_csharp_string(login_screen_text)}");',
         "",
@@ -364,7 +369,11 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
         if url:
             lines.append(f'await workflowPage.GoToAsync("{_escape_csharp_string(url)}");')
 
-        if "username:" in step.action.lower() and "password:" in step.action.lower():
+        action_lower = step.action.lower()
+        if (
+            ("username:" in action_lower or "email address:" in action_lower or "email:" in action_lower)
+            and "password:" in action_lower
+        ):
             lines.append("await workflowPage.FillCredentialInputsAsync(username, password);")
 
         click_target = _extract_click_target(step.action)
@@ -387,7 +396,11 @@ def _extract_first_url(value: str) -> str:
 
 
 def _extract_credentials(value: str) -> tuple[str, str]:
-    username_match = re.search(r"username:\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})", value, re.I)
+    username_match = re.search(
+        r"(?:username|email\s*address|email):\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})",
+        value,
+        re.I,
+    )
     password_match = re.search(r"password:\s*([^\s]+)", value, re.I)
     username = username_match.group(1).strip(".,;") if username_match else ""
     password = password_match.group(1).strip(".,;") if password_match else ""

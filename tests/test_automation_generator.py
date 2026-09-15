@@ -13,11 +13,11 @@ Suite ID: 31681
 Test Cases: 1
 
 1. [31682] Log in ViewPoint Portal
-   Step 1 Action: Navigate to https://viewpointdev.gridbeyond.com/
+   Step 1 Action: Navigate to https://viewpoint.gridbeyond.com/
    Step 1 Expected: Log in screen is displayed.
-   Step 2 Action: In 'Sign in with your email address' option, input:- username: test.automation@gridbeyondteam.testinator.com- password: Gridbeyond123@
+   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: test.automation@gridbeyondteam.testinator.com - Password: Gridbeyond123@
    Step 2 Expected:
-   Step 3 Action: Click 'Sign in'
+   Step 3 Action: Click 'Sign in' button
    Step 3 Expected: User is logged in successfully and navigated to Home screen. Text 'Welcome to your ViewPoint energy portal' is displayed in Home screen.
 """
 
@@ -31,7 +31,7 @@ class AutomationGeneratorTests(unittest.TestCase):
         self.assertEqual(len(source.test_cases), 1)
         self.assertEqual(source.test_cases[0].test_case_id, 31682)
         self.assertEqual(len(source.test_cases[0].steps), 3)
-        self.assertIn("Navigate to https://viewpointdev.gridbeyond.com/", source.test_cases[0].steps[0].action)
+        self.assertIn("Navigate to https://viewpoint.gridbeyond.com/", source.test_cases[0].steps[0].action)
 
     def test_generate_scripts_writes_login_case_and_manifest(self):
         with tempfile.TemporaryDirectory() as td:
@@ -61,6 +61,8 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertIn("LoginPage", content)
             self.assertIn("IsLoginScreenDisplayedAsync", content)
             self.assertIn("GetWelcomeMessageTextAsync", content)
+            self.assertIn('var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")', content)
+            self.assertIn('?? "https://viewpoint.gridbeyond.com/";', content)
             self.assertIn('?? "test.automation@gridbeyondteam.testinator.com";', content)
 
             manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))

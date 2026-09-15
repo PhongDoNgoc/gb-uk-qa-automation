@@ -15,13 +15,15 @@ public class Tc31682LogInViewPointPortalTests : BaseTest
     [Description("ADO #31682 - Log in ViewPoint Portal")]
     public async Task Tc31682_LogInViewPointPortal()
     {
+        var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")
+            ?? "https://viewpoint.gridbeyond.com/";
         var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")
             ?? "test.automation@gridbeyondteam.testinator.com";
         var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")
             ?? "Gridbeyond123@";
         var loginPage = new LoginPage(Page);
 
-        await loginPage.GoToAsync("https://viewpointdev.gridbeyond.com/");
+        await loginPage.GoToAsync(baseUrl);
         Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,
             "Log in screen is displayed.");
 
