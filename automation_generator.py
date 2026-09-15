@@ -321,7 +321,7 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
         password = password or step_password
 
     lines = [
-        'var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")',
+        'var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL_PROD")',
         f'    ?? "{_escape_csharp_string(login_url)}";',
         'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
         f'    ?? "{_escape_csharp_string(username)}";',

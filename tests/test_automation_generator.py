@@ -61,7 +61,7 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertIn("LoginPage", content)
             self.assertIn("IsLoginScreenDisplayedAsync", content)
             self.assertIn("GetWelcomeMessageTextAsync", content)
-            self.assertIn('var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")', content)
+            self.assertIn('var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL_PROD")', content)
             self.assertIn('?? "https://viewpoint.gridbeyond.com/";', content)
             self.assertIn('?? "test.automation@gridbeyondteam.testinator.com";', content)
 

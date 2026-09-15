@@ -15,7 +15,7 @@ public class Tc31682LogInViewPointPortalTests : BaseTest
     [Description("ADO #31682 - Log in ViewPoint Portal")]
     public async Task Tc31682_LogInViewPointPortal()
     {
-        var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL")
+        var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL_PROD")
             ?? "https://viewpoint.gridbeyond.com/";
         var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")
             ?? "test.automation@gridbeyondteam.testinator.com";
