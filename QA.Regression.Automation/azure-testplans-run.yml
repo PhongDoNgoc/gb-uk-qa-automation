@@ -31,59 +31,110 @@ parameters:
   type: string
   default: Default
 
-pool:
-  ${{ if or(eq(parameters.agentPoolMode, 'SelfHosted'), and(eq(parameters.agentPoolMode, 'Auto'), ne(parameters.targetEnvironment, 'PROD'))) }}:
-    name: ${{ parameters.selfHostedPoolName }}
-  ${{ else }}:
-    vmImage: windows-latest
-
 variables:
   buildConfiguration: Release
   TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
   VIEWPOINT_BASE_URL_PROD: https://viewpoint.gridbeyond.com/
 
-steps:
-- task: UseDotNet@2
-  displayName: Use .NET 10 SDK
-  inputs:
-    packageType: sdk
-    version: 10.0.x
+jobs:
+- ${{ if or(eq(parameters.agentPoolMode, 'SelfHosted'), and(eq(parameters.agentPoolMode, 'Auto'), ne(parameters.targetEnvironment, 'PROD'))) }}:
+  - job: RunTestPlanOnSelfHosted
+    displayName: Run Azure Test Plan on self-hosted agent
+    pool:
+      name: ${{ parameters.selfHostedPoolName }}
+    steps:
+    - task: UseDotNet@2
+      displayName: Use .NET 10 SDK
+      inputs:
+        packageType: sdk
+        version: 10.0.x
 
-- task: DotNetCoreCLI@2
-  displayName: Restore NuGet packages
-  inputs:
-    command: restore
-    projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+    - task: DotNetCoreCLI@2
+      displayName: Restore NuGet packages
+      inputs:
+        command: restore
+        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
 
-- task: DotNetCoreCLI@2
-  displayName: Build test project
-  inputs:
-    command: build
-    projects: QA.Regression.Automation\QA.Regression.Automation.csproj
-    arguments: --configuration $(buildConfiguration) --no-restore
+    - task: DotNetCoreCLI@2
+      displayName: Build test project
+      inputs:
+        command: build
+        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+        arguments: --configuration $(buildConfiguration) --no-restore
 
-- task: PowerShell@2
-  displayName: Install Playwright browsers
-  inputs:
-    targetType: inline
-    script: |
-      & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
+    - task: PowerShell@2
+      displayName: Install Playwright browsers
+      inputs:
+        targetType: inline
+        script: |
+          & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
 
-- task: VisualStudioTestPlatformInstaller@1
-  displayName: Install Visual Studio Test Platform
-  inputs:
-    packageFeedSelector: nugetOrg
-    versionSelector: latestStable
+    - task: VisualStudioTestPlatformInstaller@1
+      displayName: Install Visual Studio Test Platform
+      inputs:
+        packageFeedSelector: nugetOrg
+        versionSelector: latestStable
 
-- task: VSTest@3
-  displayName: Run associated tests from Azure Test Plan
-  inputs:
-    testSelector: testPlan
-    testPlan: ${{ parameters.testPlan }}
-    testSuite: ${{ parameters.testSuite }}
-    testConfiguration: ${{ parameters.testConfiguration }}
-    searchFolder: '$(System.DefaultWorkingDirectory)\QA.Regression.Automation'
-    uiTests: true
-    vsTestVersion: toolsInstaller
-    runInParallel: false
-    publishRunAttachments: true
+    - task: VSTest@3
+      displayName: Run associated tests from Azure Test Plan
+      inputs:
+        testSelector: testPlan
+        testPlan: ${{ parameters.testPlan }}
+        testSuite: ${{ parameters.testSuite }}
+        testConfiguration: ${{ parameters.testConfiguration }}
+        searchFolder: '$(System.DefaultWorkingDirectory)\QA.Regression.Automation'
+        uiTests: true
+        vsTestVersion: toolsInstaller
+        runInParallel: false
+        publishRunAttachments: true
+
+- ${{ else }}:
+  - job: RunTestPlanOnHosted
+    displayName: Run Azure Test Plan on hosted agent
+    pool:
+      vmImage: windows-latest
+    steps:
+    - task: UseDotNet@2
+      displayName: Use .NET 10 SDK
+      inputs:
+        packageType: sdk
+        version: 10.0.x
+
+    - task: DotNetCoreCLI@2
+      displayName: Restore NuGet packages
+      inputs:
+        command: restore
+        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+
+    - task: DotNetCoreCLI@2
+      displayName: Build test project
+      inputs:
+        command: build
+        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+        arguments: --configuration $(buildConfiguration) --no-restore
+
+    - task: PowerShell@2
+      displayName: Install Playwright browsers
+      inputs:
+        targetType: inline
+        script: |
+          & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
+
+    - task: VisualStudioTestPlatformInstaller@1
+      displayName: Install Visual Studio Test Platform
+      inputs:
+        packageFeedSelector: nugetOrg
+        versionSelector: latestStable
+
+    - task: VSTest@3
+      displayName: Run associated tests from Azure Test Plan
+      inputs:
+        testSelector: testPlan
+        testPlan: ${{ parameters.testPlan }}
+        testSuite: ${{ parameters.testSuite }}
+        testConfiguration: ${{ parameters.testConfiguration }}
+        searchFolder: '$(System.DefaultWorkingDirectory)\QA.Regression.Automation'
+        uiTests: true
+        vsTestVersion: toolsInstaller
+        runInParallel: false
+        publishRunAttachments: true
