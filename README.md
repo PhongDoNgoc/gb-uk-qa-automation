@@ -53,13 +53,13 @@ python main.py generate-scripts --suite-file .\samples\suite_31681_testcases.txt
 9. Generate Playwright automation scripts directly from Azure Test Plans
 
 ```bash
-python main.py generate-scripts --plan-id 30985 --suite-id 31681 --overwrite
+python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --overwrite
 ```
 
 10. Generate and associate in one step
 
 ```bash
-python main.py generate-scripts --plan-id 30985 --suite-id 31681 --overwrite --associate
+python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --overwrite --associate
 ```
 
 11. Execute the generated automation locally
@@ -72,6 +72,14 @@ dotnet test .\QA.Regression.Automation\QA.Regression.Automation.csproj --logger 
 
 ```bash
 python main.py associate-scripts --manifest .\QA.Regression.Automation\Tests\Generated\Suite31681\automation-manifest.json
+```
+
+13. Optionally choose the target application environment before a local test run
+
+```powershell
+$env:TEST_TARGET_ENV="DEV"
+$env:VIEWPOINT_BASE_URL_DEV="https://your-dev-url/"
+dotnet test .\QA.Regression.Automation\QA.Regression.Automation.csproj --logger trx
 ```
 
 ## Sprint Review Options
@@ -145,6 +153,85 @@ The repository now supports a full manual-to-automation handoff flow that matche
 
 - `.\QA.Regression.Automation\azure-pipelines.yml`: standard CI build and regression execution
 - `.\QA.Regression.Automation\azure-testplans-run.yml`: Azure Test Plans-triggered execution using plan, suite, and configuration inputs
+
+## Environment Selection
+
+Generated tests now resolve URLs from a selected target environment instead of being locked to a single hard-coded base URL.
+
+- Select the environment with `TEST_TARGET_ENV`
+- Provide the matching URL variable as `VIEWPOINT_BASE_URL_<ENVIRONMENT_NAME>`
+- If `TEST_TARGET_ENV` is not set, tests default to `PROD`
+
+Examples:
+
+- `TEST_TARGET_ENV=PROD` uses `VIEWPOINT_BASE_URL_PROD`
+- `TEST_TARGET_ENV=DEV` uses `VIEWPOINT_BASE_URL_DEV`
+- `TEST_TARGET_ENV=STAGE` uses `VIEWPOINT_BASE_URL_STAGE`
+
+The CI and Test Plans YAML files now expose `targetEnvironment` as a pipeline parameter, so the same pipelines can run against different environments without editing code.
+
+You can copy [.env.example](</C:/Users/lan.le/OneDrive - Endeco-Technologies/Desktop/AI Automated Automation Script/azure-testcase-generator/.env.example>) to `.env` for local setup and fill in the environment URLs you use.
+
+## Hosted vs Self-Hosted Agent Selection
+
+The pipelines now also expose:
+
+- `agentPoolMode`
+- `selfHostedPoolName`
+
+Supported modes:
+
+- `Auto`: use Microsoft-hosted agents for `PROD`, use the self-hosted pool for non-`PROD` environments
+- `Hosted`: always use Microsoft-hosted `windows-latest`
+- `SelfHosted`: always use the selected self-hosted pool
+
+Default behavior:
+
+- `PROD` + `Auto` -> hosted agent
+- `DEV` + `Auto` -> self-hosted pool
+- `STAGE` + `Auto` -> self-hosted pool
+
+If you later want to run `PROD` on your self-hosted pool as well, choose:
+
+- `agentPoolMode = SelfHosted`
+
+Use `Hosted` only when the target environment is reachable from Azure-hosted agents.
+
+## Azure Variable Checklist
+
+Create these Azure Pipeline variables before running across multiple environments:
+
+- `VIEWPOINT_USERNAME`
+- `VIEWPOINT_PASSWORD`
+- `VIEWPOINT_BASE_URL_PROD`
+- `VIEWPOINT_BASE_URL_DEV`
+- `VIEWPOINT_BASE_URL_STAGE`
+
+Optional later:
+
+- `VIEWPOINT_BASE_URL_UAT`
+- `VIEWPOINT_BASE_URL_SIT`
+
+Recommended run settings:
+
+- PROD: `targetEnvironment = PROD`, `agentPoolMode = Auto`
+- DEV: `targetEnvironment = DEV`, `agentPoolMode = Auto`, `selfHostedPoolName = your pool`
+- STAGE: `targetEnvironment = STAGE`, `agentPoolMode = Auto`, `selfHostedPoolName = your pool`
+
+If your self-hosted pool is not ready yet, do not run DEV or STAGE from Azure Pipelines because the hosted agent will not be able to reach those private environments.
+
+## Running Different Plans, Suites, and Configurations
+
+The repository flow is no longer tied to a single Azure Test Plan or suite.
+
+- For generation, pass any `--plan-id` and `--suite-id` values to `generate-scripts`
+- For Azure Test Plans execution, supply the desired `testPlan`, `testSuite`, `testConfiguration`, `targetEnvironment`, and agent mode when running `.\QA.Regression.Automation\azure-testplans-run.yml`
+
+Example:
+
+```bash
+python main.py generate-scripts --plan-id 40001 --suite-id 40025 --overwrite --associate
+```
 
 ## Association Notes
 

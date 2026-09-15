@@ -321,8 +321,7 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
         password = password or step_password
 
     lines = [
-        'var baseUrl = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL_PROD")',
-        f'    ?? "{_escape_csharp_string(login_url)}";',
+        f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
         'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
         f'    ?? "{_escape_csharp_string(username)}";',
         'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
@@ -367,7 +366,9 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
         lines.append(f"// Step {step.index}: {_escape_csharp_string(step.action)}")
         url = _extract_first_url(step.action)
         if url:
-            lines.append(f'await workflowPage.GoToAsync("{_escape_csharp_string(url)}");')
+            lines.append(
+                f'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(url)}"));'
+            )
 
         action_lower = step.action.lower()
         if (

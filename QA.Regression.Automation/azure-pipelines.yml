@@ -9,11 +9,33 @@ schedules:
 trigger:
 - main
 
+parameters:
+- name: targetEnvironment
+  displayName: Target environment name
+  type: string
+  default: PROD
+- name: agentPoolMode
+  displayName: Agent pool mode
+  type: string
+  default: Auto
+  values:
+  - Auto
+  - Hosted
+  - SelfHosted
+- name: selfHostedPoolName
+  displayName: Self-hosted pool name
+  type: string
+  default: Default
+
 pool:
-  vmImage: windows-latest
+  ${{ if or(eq(parameters.agentPoolMode, 'SelfHosted'), and(eq(parameters.agentPoolMode, 'Auto'), ne(parameters.targetEnvironment, 'PROD'))) }}:
+    name: ${{ parameters.selfHostedPoolName }}
+  ${{ else }}:
+    vmImage: windows-latest
 
 variables:
   buildConfiguration: Release
+  TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
   VIEWPOINT_BASE_URL_PROD: https://viewpoint.gridbeyond.com/
 
 steps:
