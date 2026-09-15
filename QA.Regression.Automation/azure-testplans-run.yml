@@ -13,7 +13,7 @@ parameters:
 - name: testConfiguration
   displayName: Azure Test Configuration ID
   type: string
-  default: '1'
+  default: '188'
 
 pool:
   vmImage: windows-latest
