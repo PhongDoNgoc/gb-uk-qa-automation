@@ -23,7 +23,7 @@ class AzureConfig:
 
 
 class AzureDevOpsClient:
-    """Azure DevOps client. GET endpoints for review; POST endpoints gated to Test Case creation + suite linking for the apply flow."""
+    """Azure DevOps client for reading Azure Test Plans cases and managing automated test associations."""
 
     def __init__(self, config: AzureConfig, timeout: int = 30):
         self.config = config
