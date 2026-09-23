@@ -1,6 +1,6 @@
 # Azure Test Plans Automation Generator
 
-This repository is now focused on one flow only:
+This repository is focused on this flow:
 
 - read existing manual test cases from Azure Test Plans
 - generate Playwright/NUnit automation scripts
@@ -8,7 +8,6 @@ This repository is now focused on one flow only:
 - validate locally
 - run from Azure Pipelines and Azure Test Plans
 
-The older requirement-to-manual-test-case flow has been removed from this repository.
 
 ## Main commands
 
@@ -54,6 +53,13 @@ If PowerShell blocks local scripts, use:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+```
+
+For your current default suite, you can copy-paste this exact block:
+
+```powershell
+cd "C:\Users\lan.le\OneDrive - Endeco-Technologies\Desktop\AI Automated Automation Script\azure-testcase-generator"
+powershell -ExecutionPolicy Bypass -File .\sync-testplan-automation.ps1 -PlanId 30985 -SuiteId 31681 -Commit -Push
 ```
 
 ## What the helper script does
