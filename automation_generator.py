@@ -61,6 +61,7 @@ def generate_automation_scripts(
         method_name = _build_method_name(test_case)
         file_name = f"{class_name}.cs"
         target_path = tests_dir / file_name
+        _delete_stale_test_case_files(tests_dir, test_case.test_case_id, target_path, overwrite=overwrite)
         strategy = _detect_strategy(test_case)
         content = _render_test_file(
             test_case=test_case,
@@ -259,7 +260,9 @@ def _detect_strategy(test_case: SuiteTestCase) -> str:
         and "password:" in all_text
     )
     has_sign_in = "sign in" in all_text or "login" in all_text or "log in" in all_text
-    return "login" if has_credentials and has_sign_in else "generic"
+    if has_credentials and has_sign_in:
+        return "login-failure" if _is_negative_login_case(test_case) else "login-success"
+    return "generic"
 
 
 def _render_test_file(
@@ -270,7 +273,7 @@ def _render_test_file(
     method_name: str,
     strategy: str,
 ) -> str:
-    if strategy == "login":
+    if strategy in {"login-success", "login-failure"}:
         body = _render_login_body(test_case)
     else:
         body = _render_generic_body(test_case)
@@ -303,40 +306,70 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
     login_url = ""
     login_screen_text = "Log in screen is displayed."
     welcome_text = "Welcome to your ViewPoint energy portal"
+    error_text = ""
     username = ""
     password = ""
+    is_negative_case = _is_negative_login_case(test_case)
 
     for step in test_case.steps:
         if not login_url:
             login_url = _extract_first_url(step.action)
-        if step.expected and login_screen_text == "Log in screen is displayed.":
+        if step.expected and login_screen_text == "Log in screen is displayed." and not _is_negative_login_expected(step.expected):
             if "log in screen" in step.expected.lower() or "sign in" in step.expected.lower():
                 login_screen_text = step.expected
         if step.expected:
             quoted_text = _extract_text_after_keyword(step.expected, "Text")
             if quoted_text:
-                welcome_text = quoted_text
+                if _is_negative_login_expected(step.expected):
+                    error_text = quoted_text
+                else:
+                    welcome_text = quoted_text
+            elif _is_negative_login_expected(step.expected):
+                error_text = _normalize_negative_login_expected(step.expected)
         step_username, step_password = _extract_credentials(step.action)
         username = username or step_username
         password = password or step_password
 
-    lines = [
-        f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
-        'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
-        f'    ?? "{_escape_csharp_string(username)}";',
-        'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
-        f'    ?? "{_escape_csharp_string(password)}";',
-        "var loginPage = new LoginPage(Page);",
-        "",
-        "await loginPage.GoToAsync(baseUrl);",
-        "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
-        f'    "{_escape_csharp_string(login_screen_text)}");',
-        "",
-        "await loginPage.LoginAsync(username, password);",
-        "Assert.That(await loginPage.GetWelcomeMessageTextAsync(), Does.Contain(",
-        f'    "{_escape_csharp_string(welcome_text)}"),',
-        '    "The expected home page welcome message was not displayed after sign in.");',
-    ]
+    if is_negative_case:
+        if not error_text:
+            error_text = "The username or password provided in the request are invalid."
+        lines = [
+            f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
+            'var username = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")',
+            '    ?? Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
+            f'    ?? "{_escape_csharp_string(username)}";',
+            'var password = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD")',
+            f'    ?? "{_escape_csharp_string(password)}";',
+            "var loginPage = new LoginPage(Page);",
+            "",
+            "await loginPage.GoToAsync(baseUrl);",
+            "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
+            f'    "{_escape_csharp_string(login_screen_text)}");',
+            "",
+            "await loginPage.LoginAsync(username, password);",
+            "Assert.That(await loginPage.GetLoginErrorTextAsync(",
+            f'    "{_escape_csharp_string(error_text)}"), Does.Contain(',
+            f'    "{_escape_csharp_string(error_text)}"),',
+            '    "The expected login error message was not displayed.");',
+        ]
+    else:
+        lines = [
+            f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
+            'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
+            f'    ?? "{_escape_csharp_string(username)}";',
+            'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
+            f'    ?? "{_escape_csharp_string(password)}";',
+            "var loginPage = new LoginPage(Page);",
+            "",
+            "await loginPage.GoToAsync(baseUrl);",
+            "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
+            f'    "{_escape_csharp_string(login_screen_text)}");',
+            "",
+            "await loginPage.LoginAsync(username, password);",
+            "Assert.That(await loginPage.GetWelcomeMessageTextAsync(), Does.Contain(",
+            f'    "{_escape_csharp_string(welcome_text)}"),',
+            '    "The expected home page welcome message was not displayed after sign in.");',
+        ]
     return lines
 
 
@@ -435,6 +468,51 @@ def _extract_text_after_keyword(value: str, keyword: str) -> str:
 
 def _escape_csharp_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _delete_stale_test_case_files(tests_dir: Path, test_case_id: int, target_path: Path, *, overwrite: bool) -> None:
+    stale_paths = [path for path in tests_dir.glob(f"Tc{test_case_id}*.cs") if path.resolve() != target_path.resolve()]
+    if not stale_paths:
+        return
+    if not overwrite:
+        stale_list = ", ".join(str(path.name) for path in stale_paths)
+        raise FileExistsError(
+            f"Refusing to replace stale generated files without --overwrite for test case {test_case_id}: {stale_list}"
+        )
+    for stale_path in stale_paths:
+        stale_path.unlink()
+
+
+def _is_negative_login_case(test_case: SuiteTestCase) -> bool:
+    return any(_is_negative_login_expected(step.expected) for step in test_case.steps) or (
+        "cannot log in" in test_case.title.lower()
+        or "cannot login" in test_case.title.lower()
+        or "wrong credential" in test_case.title.lower()
+        or "invalid credential" in test_case.title.lower()
+    )
+
+
+def _is_negative_login_expected(value: str) -> bool:
+    lowered = (value or "").lower()
+    return (
+        "cannot be logged in" in lowered
+        or "cannot log in" in lowered
+        or "cannot login" in lowered
+        or "invalid" in lowered
+        or "error" in lowered
+    )
+
+
+def _normalize_negative_login_expected(value: str) -> str:
+    lowered = re.sub(r"\s+", " ", (value or "")).strip()
+    marker = "text"
+    index = lowered.lower().find(marker)
+    if index >= 0:
+        lowered = lowered[index + len(marker):].strip(" :.-")
+    lowered = re.sub(r"^['\"]+|['\"]+$", "", lowered).strip()
+    if " is displayed" in lowered.lower():
+        lowered = re.sub(r"\s+is displayed.*$", "", lowered, flags=re.I).strip()
+    return lowered or "The username or password provided in the request are invalid."
 
 
 def _write_file(path: Path, content: str, *, overwrite: bool) -> str:

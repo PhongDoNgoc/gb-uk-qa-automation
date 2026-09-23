@@ -54,4 +54,11 @@ public class LoginPage
         await WelcomeMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = PostLoginTimeoutMs });
         return (await WelcomeMessage.First.InnerTextAsync()).Trim();
     }
+
+    public async Task<string> GetLoginErrorTextAsync(string expectedText)
+    {
+        var errorMessage = _page.GetByText(expectedText, new PageGetByTextOptions { Exact = false }).First;
+        await errorMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = DefaultTimeoutMs });
+        return (await errorMessage.InnerTextAsync()).Trim();
+    }
 }

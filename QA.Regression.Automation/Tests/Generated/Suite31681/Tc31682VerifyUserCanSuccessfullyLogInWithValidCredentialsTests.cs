@@ -8,12 +8,12 @@ using QA.Regression.Automation.Utilities;
 namespace QA.Regression.Automation.Tests.Generated.Suite31681;
 
 [TestFixture]
-public class Tc31682LogInViewPointPortalTests : BaseTest
+public class Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests : BaseTest
 {
     [Test]
     [Property("TestCaseId", "31682")]
-    [Description("ADO #31682 - Log in ViewPoint Portal")]
-    public async Task Tc31682_LogInViewPointPortal()
+    [Description("ADO #31682 - Verify user can successfully log in with valid credentials")]
+    public async Task Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials()
     {
         var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");
         var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")
