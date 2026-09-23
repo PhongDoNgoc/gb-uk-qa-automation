@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Azure DevOps QA Test Case Generator")
+    parser = argparse.ArgumentParser(description="Azure Test Plans Automation Generator")
     sub = parser.add_subparsers(dest="command", required=True)
 
     generate = sub.add_parser("generate-scripts", help="Generate Playwright C# scripts from Azure Test Cases")

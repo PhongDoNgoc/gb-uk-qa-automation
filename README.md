@@ -1,4 +1,4 @@
-# Azure DevOps Automation Script Generator
+# Azure Test Plans Automation Generator
 
 This repository is now focused on one flow only:
 
@@ -41,19 +41,19 @@ python main.py associate-scripts --manifest .\QA.Regression.Automation\Tests\Gen
 Run this from the repository root:
 
 ```powershell
-.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
+.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
 ```
 
 To also commit and push automatically:
 
 ```powershell
-.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
 ```
 
 If PowerShell blocks local scripts, use:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+powershell -ExecutionPolicy Bypass -File .\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
 ```
 
 ## What the helper script does
@@ -76,7 +76,7 @@ Optional flags:
 Example:
 
 ```powershell
-.\update-azure-test-suite.ps1 -PlanId 30985 -SuiteId 31681 -Commit -Push
+.\sync-testplan-automation.ps1 -PlanId 30985 -SuiteId 31681 -Commit -Push
 ```
 
 ## Project structure
@@ -89,7 +89,7 @@ azure-testcase-generator/
 ├── azure_client.py
 ├── azure_serialization.py
 ├── config.py
-├── update-azure-test-suite.ps1
+├── sync-testplan-automation.ps1
 ├── tests/
 │   ├── test_automation_association.py
 │   ├── test_automation_generator.py

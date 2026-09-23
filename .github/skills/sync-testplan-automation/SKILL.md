@@ -1,9 +1,9 @@
 ---
-name: update-azure-test-suite
+name: sync-testplan-automation
 description: Use this skill when Azure Test Plans test cases are added or changed and the repository must regenerate Playwright tests, re-associate them to Azure Test Cases, validate locally, push code, and rerun Azure Pipelines/Test Plans.
 ---
 
-# Update Azure Test Suite
+# Sync Test Plan Automation
 
 Use this skill when manual test cases in Azure Test Plans change and the codebase must be brought back in sync.
 
@@ -43,13 +43,13 @@ cd "C:\Users\lan.le\OneDrive - Endeco-Technologies\Desktop\AI Automated Automati
 ### Fastest one-command flow
 
 ```powershell
-.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
+.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
 ```
 
 To also commit and push automatically:
 
 ```powershell
-.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
 ```
 
 This helper script:
@@ -168,7 +168,7 @@ Example: Test case `31683` is added to suite `40025` in plan `40001`.
 2. Run:
 
    ```powershell
-   .\update-azure-test-suite.ps1 -PlanId 40001 -SuiteId 40025 -Commit -Push
+   .\sync-testplan-automation.ps1 -PlanId 40001 -SuiteId 40025 -Commit -Push
    ```
 
 3. Validate:

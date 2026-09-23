@@ -7,7 +7,7 @@ description: Use this skill when the generated automation is already in the repo
 
 Use this skill when the automation scripts already exist and you need to execute or verify the Azure DevOps side of the flow.
 
-This skill is for the "run it in Azure" phase. If test cases were added or manual steps changed, use `update-azure-test-suite` first.
+This skill is for the "run it in Azure" phase. If test cases were added or manual steps changed, use `sync-testplan-automation` first.
 
 ## When to use
 
