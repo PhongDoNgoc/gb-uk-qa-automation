@@ -62,19 +62,31 @@ python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --over
 python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --overwrite --associate
 ```
 
-11. Execute the generated automation locally
+11. Run the repeatable suite-update flow with one command
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
+```
+
+To generate, validate, commit, and push in one run:
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+```
+
+12. Execute the generated automation locally
 
 ```bash
 dotnet test .\QA.Regression.Automation\QA.Regression.Automation.csproj --logger trx
 ```
 
-12. Push the generated automation mapping back to Azure Test Cases
+13. Push the generated automation mapping back to Azure Test Cases
 
 ```bash
 python main.py associate-scripts --manifest .\QA.Regression.Automation\Tests\Generated\Suite31681\automation-manifest.json
 ```
 
-13. Optionally choose the target application environment before a local test run
+14. Optionally choose the target application environment before a local test run
 
 ```powershell
 $env:TEST_TARGET_ENV="DEV"
@@ -148,6 +160,36 @@ The repository now supports a full manual-to-automation handoff flow that matche
 6. If you did not use `--associate`, run `associate-scripts` to stamp the Azure Test Case automation fields from the manifest.
 7. Run the tests locally with `dotnet test`.
 8. Publish and execute them in Azure DevOps through the pipeline in `.\QA.Regression.Automation\azure-pipelines.yml`.
+
+## Easiest Repeatable Flow
+
+For future suite updates, the fastest local command is:
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
+```
+
+This script:
+
+- loads values from `.env` if present
+- regenerates the suite automation
+- overwrites existing Azure automated associations when they changed
+- runs the Python validation tests
+- runs the .NET automation tests
+
+Optional flags:
+
+- `-TargetEnvironment PROD|DEV|STAGE`
+- `-Commit`
+- `-Push`
+- `-SkipPythonTests`
+- `-SkipDotNetTests`
+
+Example:
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId 30985 -SuiteId 31681 -Commit -Push
+```
 
 ## Pipeline Files
 

@@ -40,6 +40,26 @@ Run these commands from the repository root:
 cd "C:\Users\lan.le\OneDrive - Endeco-Technologies\Desktop\AI Automated Automation Script\azure-testcase-generator"
 ```
 
+### Fastest one-command flow
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
+```
+
+To also commit and push automatically:
+
+```powershell
+.\update-azure-test-suite.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+```
+
+This helper script:
+
+- loads `.env` automatically
+- regenerates the suite automation
+- overwrites stale automated associations when the generated test name changes
+- runs Python validation tests
+- runs .NET automation tests
+
 ### 1) Regenerate scripts and re-associate to Azure Test Cases
 
 ```powershell
@@ -148,21 +168,13 @@ Example: Test case `31683` is added to suite `40025` in plan `40001`.
 2. Run:
 
    ```powershell
-   python main.py generate-scripts --plan-id 40001 --suite-id 40025 --overwrite --associate
+   .\update-azure-test-suite.ps1 -PlanId 40001 -SuiteId 40025 -Commit -Push
    ```
 
 3. Validate:
 
    ```powershell
-   dotnet test .\QA.Regression.Automation\QA.Regression.Automation.csproj --configuration Release --logger trx
+   This is already included in the helper script unless you explicitly skip it.
    ```
 
-4. Push:
-
-   ```powershell
-   git add .
-   git commit -m "Add automation for updated Azure test suite"
-   git push origin main
-   ```
-
-5. Run the Azure pipeline and then the Azure Test Plans pipeline.
+4. Run the Azure pipeline and then the Azure Test Plans pipeline.
