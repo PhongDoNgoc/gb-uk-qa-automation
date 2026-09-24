@@ -158,6 +158,15 @@ Optional later:
 - `VIEWPOINT_BASE_URL_UAT`
 - `VIEWPOINT_BASE_URL_SIT`
 
+## Test evidence
+
+Each executed UI test attaches:
+
+- a Playwright trace `.zip`
+- a screenshot `.png`
+
+Failed tests label the image as `Failure screenshot`. Passed tests label it as `Test screenshot`.
+
 ## Validation
 
 Run the focused Python tests:

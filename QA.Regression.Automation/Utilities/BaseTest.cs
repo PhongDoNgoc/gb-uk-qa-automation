@@ -41,20 +41,20 @@ public class BaseTest
         Directory.CreateDirectory(artifactDir);
 
         var testName = SanitizeFileName(TestContext.CurrentContext.Test.Name);
+        var screenshotPath = Path.Combine(artifactDir, $"{testName}.png");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+            Path = screenshotPath,
+            FullPage = true,
+        });
+        var screenshotAttachmentName = TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Failed
+            ? "Failure screenshot"
+            : "Test screenshot";
+        TestContext.AddTestAttachment(screenshotPath, screenshotAttachmentName);
+
         var tracePath = Path.Combine(artifactDir, $"{testName}.zip");
         await Context.Tracing.StopAsync(new TracingStopOptions { Path = tracePath });
         TestContext.AddTestAttachment(tracePath, "Playwright trace");
-
-        if (TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Failed)
-        {
-            var screenshotPath = Path.Combine(artifactDir, $"{testName}.png");
-            await Page.ScreenshotAsync(new PageScreenshotOptions
-            {
-                Path = screenshotPath,
-                FullPage = true,
-            });
-            TestContext.AddTestAttachment(screenshotPath, "Failure screenshot");
-        }
 
         await Context.CloseAsync();
         await Browser.CloseAsync();
