@@ -16,11 +16,9 @@ public class Tc31988VerifyUserCannotLogInWithWrongCredentialsTests : BaseTest
     public async Task Tc31988_VerifyUserCannotLogInWithWrongCredentials()
     {
         var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");
-        var username = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")
-            ?? Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")
-            ?? "test.automation@gridbeyondteam.testinator.com";
-        var password = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD")
-            ?? "Gridbeyond12345";
+        var username = TestEnvironmentSettings.ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")
+            ?? TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
+        var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD");
         var loginPage = new LoginPage(Page);
 
         await loginPage.GoToAsync(baseUrl);

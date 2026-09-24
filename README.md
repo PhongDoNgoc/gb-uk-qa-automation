@@ -141,6 +141,8 @@ Create these Azure Pipeline variables before running across multiple environment
 
 - `VIEWPOINT_USERNAME`
 - `VIEWPOINT_PASSWORD`
+- `VIEWPOINT_INVALID_USERNAME` (optional; defaults to `VIEWPOINT_USERNAME` if not set)
+- `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
 - `VIEWPOINT_BASE_URL_PROD`
 - `VIEWPOINT_BASE_URL_DEV`
 - `VIEWPOINT_BASE_URL_STAGE`

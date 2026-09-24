@@ -4,6 +4,25 @@ namespace QA.Regression.Automation.Utilities;
 
 public static class TestEnvironmentSettings
 {
+    public static string RequireEnvironmentVariable(string name)
+    {
+        var value = ResolveOptionalEnvironmentVariable(name);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException(
+            $"Required environment variable '{name}' is not configured."
+        );
+    }
+
+    public static string? ResolveOptionalEnvironmentVariable(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
     public static string ResolveUrlForEnvironment(string defaultUrl)
     {
         var selectedEnvironment = ResolveEnvironmentName();
@@ -81,7 +100,7 @@ public static class TestEnvironmentSettings
 
     private static string? ResolveConfiguredBaseUrl(string environmentName)
     {
-        var environmentSpecific = Environment.GetEnvironmentVariable($"VIEWPOINT_BASE_URL_{environmentName}");
+        var environmentSpecific = ResolveOptionalEnvironmentVariable($"VIEWPOINT_BASE_URL_{environmentName}");
         if (!string.IsNullOrWhiteSpace(environmentSpecific))
         {
             return environmentSpecific;
@@ -89,7 +108,7 @@ public static class TestEnvironmentSettings
 
         if (environmentName.Equals("PROD", StringComparison.OrdinalIgnoreCase))
         {
-            var legacy = Environment.GetEnvironmentVariable("VIEWPOINT_BASE_URL");
+            var legacy = ResolveOptionalEnvironmentVariable("VIEWPOINT_BASE_URL");
             if (!string.IsNullOrWhiteSpace(legacy))
             {
                 return legacy;

@@ -127,6 +127,8 @@ Use these variables in Azure Pipelines:
 - `TEST_TARGET_ENV`
 - `VIEWPOINT_USERNAME`
 - `VIEWPOINT_PASSWORD`
+- `VIEWPOINT_INVALID_USERNAME` (optional; defaults to `VIEWPOINT_USERNAME` if not set)
+- `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
 - at least one matching base URL variable such as `VIEWPOINT_BASE_URL_PROD`
 - a usable self-hosted pool if you want to run private environments from Azure Pipelines
 

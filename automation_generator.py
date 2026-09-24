@@ -307,8 +307,6 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
     login_screen_text = "Log in screen is displayed."
     welcome_text = "Welcome to your ViewPoint energy portal"
     error_text = ""
-    username = ""
-    password = ""
     is_negative_case = _is_negative_login_case(test_case)
 
     for step in test_case.steps:
@@ -326,20 +324,15 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
                     welcome_text = quoted_text
             elif _is_negative_login_expected(step.expected):
                 error_text = _normalize_negative_login_expected(step.expected)
-        step_username, step_password = _extract_credentials(step.action)
-        username = username or step_username
-        password = password or step_password
 
     if is_negative_case:
         if not error_text:
             error_text = "The username or password provided in the request are invalid."
         lines = [
             f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
-            'var username = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")',
-            '    ?? Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
-            f'    ?? "{_escape_csharp_string(username)}";',
-            'var password = Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD")',
-            f'    ?? "{_escape_csharp_string(password)}";',
+            'var username = TestEnvironmentSettings.ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")',
+            '    ?? TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
+            'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD");',
             "var loginPage = new LoginPage(Page);",
             "",
             "await loginPage.GoToAsync(baseUrl);",
@@ -355,10 +348,8 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
     else:
         lines = [
             f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
-            'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
-            f'    ?? "{_escape_csharp_string(username)}";',
-            'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
-            f'    ?? "{_escape_csharp_string(password)}";',
+            'var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
+            'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");',
             "var loginPage = new LoginPage(Page);",
             "",
             "await loginPage.GoToAsync(baseUrl);",
@@ -381,15 +372,13 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
         lines.extend(
             [
                 "",
-                'var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")',
-                f'    ?? "{_escape_csharp_string(username)}";',
+                'var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
             ]
         )
     if password:
         lines.extend(
             [
-                'var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")',
-                f'    ?? "{_escape_csharp_string(password)}";',
+                'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");',
             ]
         )
 

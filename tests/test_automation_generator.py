@@ -15,7 +15,7 @@ Test Cases: 1
 1. [31682] Log in ViewPoint Portal
    Step 1 Action: Navigate to https://viewpoint.gridbeyond.com/
    Step 1 Expected: Log in screen is displayed.
-   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: test.automation@gridbeyondteam.testinator.com - Password: Gridbeyond123@
+   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: valid.user@example.com - Password: ValidPassword123!
    Step 2 Expected:
    Step 3 Action: Click 'Sign in' button
    Step 3 Expected: User is logged in successfully and navigated to Home screen. Text 'Welcome to your ViewPoint energy portal' is displayed in Home screen.
@@ -28,7 +28,7 @@ Test Cases: 1
 1. [31988] Verify user cannot log in with wrong credentials
    Step 1 Action: Navigate to https://viewpoint.gridbeyond.com/
    Step 1 Expected: Log in screen is displayed.
-   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: test.automation@gridbeyondteam.testinator.com - Password: Gridbeyond12345
+   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: valid.user@example.com - Password: InvalidPassword123!
    Step 2 Expected:
    Step 3 Action: Click 'Sign in' button
    Step 3 Expected: User cannot be logged in. Text ' The username or password provided in the request are invalid. ' is displayed in Log in screen
@@ -75,7 +75,10 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertIn("IsLoginScreenDisplayedAsync", content)
             self.assertIn("GetWelcomeMessageTextAsync", content)
             self.assertIn('var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");', content)
-            self.assertIn('?? "test.automation@gridbeyondteam.testinator.com";', content)
+            self.assertIn('var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");', content)
+            self.assertIn('var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");', content)
+            self.assertNotIn("valid.user@example.com", content)
+            self.assertNotIn("ValidPassword123!", content)
 
             manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
             self.assertEqual(manifest["suite_id"], 31681)
@@ -102,9 +105,11 @@ class AutomationGeneratorTests(unittest.TestCase):
 
             generated_file = Path(result["generated"][0]["file_path"])
             content = generated_file.read_text(encoding="utf-8")
-            self.assertIn('Environment.GetEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD")', content)
+            self.assertIn('ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")', content)
+            self.assertIn('RequireEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD")', content)
             self.assertIn("GetLoginErrorTextAsync", content)
             self.assertIn("The expected login error message was not displayed.", content)
+            self.assertNotIn("InvalidPassword123!", content)
 
 
 if __name__ == "__main__":

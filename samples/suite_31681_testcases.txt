@@ -5,7 +5,7 @@ Test Cases: 1
 1. [31682] Log in ViewPoint Portal
    Step 1 Action: Navigate to https://viewpoint.gridbeyond.com/
    Step 1 Expected: Log in screen is displayed.
-   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: test.automation@gridbeyondteam.testinator.com - Password: Gridbeyond123@
+   Step 2 Action: In 'Sign in with your email address' option, input: - Email Address: valid.user@example.com - Password: ValidPassword123!
    Step 2 Expected: 
    Step 3 Action: Click 'Sign in' button
    Step 3 Expected: User is logged in successfully and navigated to Home screen. Text 'Welcome to your ViewPoint energy portal' is displayed in Home screen.

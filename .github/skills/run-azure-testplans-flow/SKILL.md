@@ -35,6 +35,8 @@ Before using this skill, make sure all of the following are true:
 - Azure pipeline variables exist:
   - `VIEWPOINT_USERNAME`
   - `VIEWPOINT_PASSWORD`
+  - `VIEWPOINT_INVALID_USERNAME` (optional; defaults to `VIEWPOINT_USERNAME` if not set)
+  - `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
   - `VIEWPOINT_BASE_URL_PROD` for production
   - any additional environment URLs you want to run, such as `VIEWPOINT_BASE_URL_DEV` or `VIEWPOINT_BASE_URL_STAGE`
 - You know the specific Azure Test Plan ID, suite ID, and configuration ID you want to execute

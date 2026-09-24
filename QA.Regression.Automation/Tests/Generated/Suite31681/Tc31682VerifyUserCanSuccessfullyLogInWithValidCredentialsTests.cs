@@ -16,10 +16,8 @@ public class Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests : Ba
     public async Task Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials()
     {
         var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");
-        var username = Environment.GetEnvironmentVariable("VIEWPOINT_USERNAME")
-            ?? "test.automation@gridbeyondteam.testinator.com";
-        var password = Environment.GetEnvironmentVariable("VIEWPOINT_PASSWORD")
-            ?? "Gridbeyond123@";
+        var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
+        var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");
         var loginPage = new LoginPage(Page);
 
         await loginPage.GoToAsync(baseUrl);
