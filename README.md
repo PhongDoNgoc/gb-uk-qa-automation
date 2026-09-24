@@ -119,6 +119,8 @@ Generated tests resolve URLs from a selected target environment.
 - `TEST_TARGET_ENV=DEV` uses `VIEWPOINT_BASE_URL_DEV`
 - `TEST_TARGET_ENV=STAGE` uses `VIEWPOINT_BASE_URL_STAGE`
 
+The Azure pipeline YAML files do not provide a built-in PROD URL anymore, so every environment URL, including `VIEWPOINT_BASE_URL_PROD`, must come from your local `.env` or Azure DevOps pipeline variables.
+
 You can copy [.env.example](</C:/Users/lan.le/OneDrive - Endeco-Technologies/Desktop/AI Automated Automation Script/azure-testcase-generator/.env.example>) to `.env` for local setup.
 
 ## Hosted vs self-hosted agents
@@ -146,6 +148,10 @@ Create these Azure Pipeline variables before running across multiple environment
 - `VIEWPOINT_BASE_URL_PROD`
 - `VIEWPOINT_BASE_URL_DEV`
 - `VIEWPOINT_BASE_URL_STAGE`
+
+These variables should be configured in Azure DevOps pipeline variables or a variable group. The checked-in YAML files no longer supply a default PROD URL.
+If you store them as secret variables in Azure DevOps, the pipeline YAML now maps them explicitly into the `VSTest` task environment so the NUnit test process can read them.
+The pipeline also includes a preflight validation step that checks the required variable names before starting `VSTest`, so missing configuration fails fast with a clearer error.
 
 Optional later:
 

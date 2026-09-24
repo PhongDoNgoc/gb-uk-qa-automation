@@ -30,7 +30,6 @@ parameters:
 variables:
   buildConfiguration: Release
   TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
-  VIEWPOINT_BASE_URL_PROD: https://viewpoint.gridbeyond.com/
 
 jobs:
 - ${{ if or(eq(parameters.agentPoolMode, 'SelfHosted'), and(eq(parameters.agentPoolMode, 'Auto'), ne(parameters.targetEnvironment, 'PROD'))) }}:
@@ -71,6 +70,42 @@ jobs:
         packageFeedSelector: nugetOrg
         versionSelector: latestStable
 
+    - task: PowerShell@2
+      displayName: Validate required test environment variables
+      inputs:
+        targetType: inline
+        script: |
+          $required = @(
+            'VIEWPOINT_USERNAME',
+            'VIEWPOINT_PASSWORD',
+            'VIEWPOINT_INVALID_PASSWORD'
+          )
+
+          $selectedEnvironment = if ([string]::IsNullOrWhiteSpace($env:TEST_TARGET_ENV)) { 'PROD' } else { $env:TEST_TARGET_ENV.Trim().ToUpperInvariant() }
+          $required += "VIEWPOINT_BASE_URL_$selectedEnvironment"
+
+          $missing = @()
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            throw "Missing required environment variable(s) for test execution: $($missing -join ', ')"
+          }
+
+          Write-Host "Validated required environment variables for TEST_TARGET_ENV=$selectedEnvironment."
+      env:
+        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
     - task: VSTest@3
       displayName: Execute tests and publish ADO results
       inputs:
@@ -83,6 +118,15 @@ jobs:
         runInParallel: true
         publishRunAttachments: true
         vsTestVersion: toolsInstaller
+      env:
+        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
 - ${{ else }}:
   - job: RunRegressionOnHosted
@@ -122,6 +166,42 @@ jobs:
         packageFeedSelector: nugetOrg
         versionSelector: latestStable
 
+    - task: PowerShell@2
+      displayName: Validate required test environment variables
+      inputs:
+        targetType: inline
+        script: |
+          $required = @(
+            'VIEWPOINT_USERNAME',
+            'VIEWPOINT_PASSWORD',
+            'VIEWPOINT_INVALID_PASSWORD'
+          )
+
+          $selectedEnvironment = if ([string]::IsNullOrWhiteSpace($env:TEST_TARGET_ENV)) { 'PROD' } else { $env:TEST_TARGET_ENV.Trim().ToUpperInvariant() }
+          $required += "VIEWPOINT_BASE_URL_$selectedEnvironment"
+
+          $missing = @()
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            throw "Missing required environment variable(s) for test execution: $($missing -join ', ')"
+          }
+
+          Write-Host "Validated required environment variables for TEST_TARGET_ENV=$selectedEnvironment."
+      env:
+        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
     - task: VSTest@3
       displayName: Execute tests and publish ADO results
       inputs:
@@ -134,3 +214,12 @@ jobs:
         runInParallel: true
         publishRunAttachments: true
         vsTestVersion: toolsInstaller
+      env:
+        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)

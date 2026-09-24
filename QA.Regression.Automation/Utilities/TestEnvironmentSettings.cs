@@ -4,6 +4,8 @@ namespace QA.Regression.Automation.Utilities;
 
 public static class TestEnvironmentSettings
 {
+    private const string LegacyProdBaseUrlVariableName = "VIEWPOINT_BASE_URL";
+
     public static string RequireEnvironmentVariable(string name)
     {
         var value = ResolveOptionalEnvironmentVariable(name);
@@ -23,43 +25,33 @@ public static class TestEnvironmentSettings
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    public static string ResolveUrlForEnvironment(string defaultUrl)
+    public static string ResolveBaseUrlForEnvironment()
     {
         var selectedEnvironment = ResolveEnvironmentName();
-        var configuredBaseUrl = ResolveConfiguredBaseUrl(selectedEnvironment);
+        return ResolveConfiguredBaseUri(selectedEnvironment).ToString();
+    }
 
-        if (string.IsNullOrWhiteSpace(configuredBaseUrl))
+    public static string ResolveUrlForEnvironment(string relativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(relativeUrl) || relativeUrl == "/")
         {
-            if (EnvironmentWasExplicitlySelected() && !selectedEnvironment.Equals("PROD", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    $"TEST_TARGET_ENV is set to '{selectedEnvironment}', but VIEWPOINT_BASE_URL_{selectedEnvironment} is not configured."
-                );
-            }
-
-            return defaultUrl;
+            return ResolveBaseUrlForEnvironment();
         }
 
-        if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var configuredBaseUri))
+        if (Uri.TryCreate(relativeUrl, UriKind.Absolute, out _))
         {
             throw new InvalidOperationException(
-                $"Configured base URL '{configuredBaseUrl}' for environment '{selectedEnvironment}' is not a valid absolute URI."
+                $"Expected a relative URL path, but received an absolute URL: '{relativeUrl}'."
             );
         }
 
-        if (!Uri.TryCreate(defaultUrl, UriKind.Absolute, out var defaultUri))
-        {
-            return configuredBaseUri.ToString();
-        }
+        var selectedEnvironment = ResolveEnvironmentName();
+        var configuredBaseUri = ResolveConfiguredBaseUri(selectedEnvironment);
+        var normalizedRelativeUrl = relativeUrl.StartsWith("/", StringComparison.Ordinal)
+            ? relativeUrl
+            : $"/{relativeUrl}";
 
-        var resolved = new UriBuilder(defaultUri)
-        {
-            Scheme = configuredBaseUri.Scheme,
-            Host = configuredBaseUri.Host,
-            Port = configuredBaseUri.IsDefaultPort ? -1 : configuredBaseUri.Port,
-        };
-
-        return resolved.Uri.ToString();
+        return new Uri(configuredBaseUri, normalizedRelativeUrl).ToString();
     }
 
     public static string ResolveEnvironmentName()
@@ -93,14 +85,23 @@ public static class TestEnvironmentSettings
         return builder.ToString();
     }
 
-    private static bool EnvironmentWasExplicitlySelected()
+    private static Uri ResolveConfiguredBaseUri(string environmentName)
     {
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TEST_TARGET_ENV"));
+        var configuredBaseUrl = ResolveConfiguredBaseUrl(environmentName);
+        if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var configuredBaseUri))
+        {
+            throw new InvalidOperationException(
+                $"Configured base URL '{configuredBaseUrl}' for environment '{environmentName}' is not a valid absolute URI."
+            );
+        }
+
+        return configuredBaseUri;
     }
 
-    private static string? ResolveConfiguredBaseUrl(string environmentName)
+    private static string ResolveConfiguredBaseUrl(string environmentName)
     {
-        var environmentSpecific = ResolveOptionalEnvironmentVariable($"VIEWPOINT_BASE_URL_{environmentName}");
+        var environmentVariableName = $"VIEWPOINT_BASE_URL_{environmentName}";
+        var environmentSpecific = ResolveOptionalEnvironmentVariable(environmentVariableName);
         if (!string.IsNullOrWhiteSpace(environmentSpecific))
         {
             return environmentSpecific;
@@ -108,13 +109,19 @@ public static class TestEnvironmentSettings
 
         if (environmentName.Equals("PROD", StringComparison.OrdinalIgnoreCase))
         {
-            var legacy = ResolveOptionalEnvironmentVariable("VIEWPOINT_BASE_URL");
+            var legacy = ResolveOptionalEnvironmentVariable(LegacyProdBaseUrlVariableName);
             if (!string.IsNullOrWhiteSpace(legacy))
             {
                 return legacy;
             }
+
+            throw new InvalidOperationException(
+                $"Neither '{environmentVariableName}' nor legacy '{LegacyProdBaseUrlVariableName}' is configured."
+            );
         }
 
-        return null;
+        throw new InvalidOperationException(
+            $"Required environment variable '{environmentVariableName}' is not configured."
+        );
     }
 }

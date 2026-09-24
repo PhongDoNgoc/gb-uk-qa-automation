@@ -15,7 +15,7 @@ public class Tc31988VerifyUserCannotLogInWithWrongCredentialsTests : BaseTest
     [Description("ADO #31988 - Verify user cannot log in with wrong credentials")]
     public async Task Tc31988_VerifyUserCannotLogInWithWrongCredentials()
     {
-        var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");
+        var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();
         var username = TestEnvironmentSettings.ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")
             ?? TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
         var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD");

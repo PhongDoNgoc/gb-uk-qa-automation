@@ -27,6 +27,7 @@ Use this skill when any of the following happens:
 - The preferred one-step command is `generate-scripts --overwrite --associate`.
 - The production/public URL variable name is `VIEWPOINT_BASE_URL_PROD`.
 - Environment selection is controlled by `TEST_TARGET_ENV`, which maps to `VIEWPOINT_BASE_URL_<ENVIRONMENT>`.
+- The pipeline YAML files no longer hardcode a PROD URL; Azure DevOps variables must provide `VIEWPOINT_BASE_URL_PROD` just like other environments.
 - Pipeline agent routing is controlled by `agentPoolMode`; in `Auto`, `PROD` uses hosted and non-`PROD` environments use the selected self-hosted pool.
 - Each suite can use a different Azure Test Plans configuration ID, so verify the suite's actual configuration before running the Test Plans pipeline.
 - CI pipeline file: `QA.Regression.Automation/azure-pipelines.yml`
@@ -131,6 +132,8 @@ Use these variables in Azure Pipelines:
 - `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
 - at least one matching base URL variable such as `VIEWPOINT_BASE_URL_PROD`
 - a usable self-hosted pool if you want to run private environments from Azure Pipelines
+
+Configure them in Azure DevOps pipeline variables or a variable group; the checked-in YAML files do not provide fallback URL values.
 
 Future environments can add more variables such as:
 

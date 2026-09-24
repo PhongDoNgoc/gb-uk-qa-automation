@@ -25,6 +25,7 @@ Use this skill when any of the following is true:
 - Target environment parameter: `targetEnvironment`
 - Agent routing parameters: `agentPoolMode`, `selfHostedPoolName`
 - Base URL variables follow: `VIEWPOINT_BASE_URL_<ENVIRONMENT>`
+- The checked-in pipeline YAML files do not hardcode a PROD base URL, so Azure DevOps variables must provide `VIEWPOINT_BASE_URL_PROD` and any other environment URLs you use.
 
 ## Preconditions
 

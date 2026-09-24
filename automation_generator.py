@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from azure_serialization import parse_existing_steps
 
@@ -329,7 +330,7 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
         if not error_text:
             error_text = "The username or password provided in the request are invalid."
         lines = [
-            f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
+            f"var baseUrl = {_build_resolved_url_expression(login_url)};",
             'var username = TestEnvironmentSettings.ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")',
             '    ?? TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
             'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_INVALID_PASSWORD");',
@@ -347,7 +348,7 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
         ]
     else:
         lines = [
-            f'var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(login_url)}");',
+            f"var baseUrl = {_build_resolved_url_expression(login_url)};",
             'var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
             'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");',
             "var loginPage = new LoginPage(Page);",
@@ -385,12 +386,10 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
     for step in test_case.steps:
         if lines and lines[-1] != "":
             lines.append("")
-        lines.append(f"// Step {step.index}: {_escape_csharp_string(step.action)}")
+        lines.append(f"// Step {step.index}: {_escape_csharp_string(_sanitize_action_text_for_comment(step.action))}")
         url = _extract_first_url(step.action)
         if url:
-            lines.append(
-                f'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(url)}"));'
-            )
+            lines.append(f"await workflowPage.GoToAsync({_build_resolved_url_expression(url)});")
 
         action_lower = step.action.lower()
         if (
@@ -416,6 +415,34 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
 def _extract_first_url(value: str) -> str:
     match = re.search(r"https?://[^\s)]+", value)
     return match.group(0).rstrip(".,") if match else ""
+
+
+def _sanitize_action_text_for_comment(action: str) -> str:
+    return re.sub(
+        r"https?://[^\s)]+",
+        lambda match: _extract_relative_url(match.group(0)),
+        action,
+    )
+
+
+def _build_resolved_url_expression(source_url: str) -> str:
+    relative_url = _extract_relative_url(source_url)
+    if relative_url in ("", "/"):
+        return "TestEnvironmentSettings.ResolveBaseUrlForEnvironment()"
+
+    return f'TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(relative_url)}")'
+
+
+def _extract_relative_url(source_url: str) -> str:
+    if not source_url:
+        return "/"
+
+    parsed = urlsplit(source_url)
+    if not parsed.scheme or not parsed.netloc:
+        return source_url
+
+    path = parsed.path or "/"
+    return urlunsplit(("", "", path, parsed.query, parsed.fragment))
 
 
 def _extract_credentials(value: str) -> tuple[str, str]:

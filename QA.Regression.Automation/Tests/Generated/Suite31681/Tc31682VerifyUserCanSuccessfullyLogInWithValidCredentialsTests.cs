@@ -15,7 +15,7 @@ public class Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests : Ba
     [Description("ADO #31682 - Verify user can successfully log in with valid credentials")]
     public async Task Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials()
     {
-        var baseUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("https://viewpoint.gridbeyond.com/");
+        var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();
         var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
         var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");
         var loginPage = new LoginPage(Page);
