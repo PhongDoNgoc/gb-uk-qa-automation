@@ -27,15 +27,15 @@ public class GeneratedWorkflowPage
             throw new ArgumentException("API path fragment must be provided.", nameof(apiPathFragment));
         }
 
-        var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
-        var responseTask = _page.WaitForResponseAsync(
-            response => ResponseMatchesPath(response, normalizedApiPath)
-        );
-
         await GoToAsync(pageUrl);
-
-        var response = await responseTask;
-        return response.Status;
+        var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
+        return await _page.EvaluateAsync<int>(
+            @"async (apiUrl) => {
+                const response = await fetch(apiUrl, { credentials: 'include' });
+                return response.status;
+            }",
+            normalizedApiPath
+        );
     }
 
     public async Task FillCredentialInputsAsync(string username, string password)
@@ -74,15 +74,5 @@ public class GeneratedWorkflowPage
         }
 
         return normalized;
-    }
-
-    private static bool ResponseMatchesPath(IResponse response, string apiPathFragment)
-    {
-        if (Uri.TryCreate(response.Url, UriKind.Absolute, out var responseUri))
-        {
-            return responseUri.PathAndQuery.Contains(apiPathFragment, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return response.Url.Contains(apiPathFragment, StringComparison.OrdinalIgnoreCase);
     }
 }
