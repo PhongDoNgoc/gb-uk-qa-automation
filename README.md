@@ -168,6 +168,12 @@ Each executed UI test attaches:
 
 Failed tests label the image as `Failure screenshot`. Passed tests label it as `Test screenshot`.
 
+For generated API status checks, the screenshot also includes an on-page evidence panel showing:
+
+- the authenticated request URL
+- the returned HTTP status code (for example `200`)
+- a preview of the API response body
+
 ## Validation
 
 Run the focused Python tests:
