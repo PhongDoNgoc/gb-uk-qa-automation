@@ -1,4 +1,6 @@
 using Microsoft.Playwright;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 
 namespace QA.Regression.Automation.Pages;
@@ -31,21 +33,7 @@ public class GeneratedWorkflowPage
 
         await GoToAsync(pageUrl);
         var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
-        var captureJson = await _page.EvaluateAsync<string>(
-            @"async (apiUrl) => {
-                const response = await fetch(apiUrl, { credentials: 'include' });
-                const body = await response.text();
-                return JSON.stringify({
-                    statusCode: response.status,
-                    requestUrl: response.url,
-                    responseBody: body
-                });
-            }",
-            normalizedApiPath
-        );
-
-        var capture = JsonSerializer.Deserialize<ApiResponseCapture>(captureJson)
-            ?? throw new InvalidOperationException("Unable to deserialize API response capture.");
+        var capture = await FetchApiResponseWithBrowserCookiesAsync(pageUrl, normalizedApiPath);
         await RenderApiEvidencePanelAsync(capture);
         return capture.StatusCode;
     }
@@ -86,6 +74,65 @@ public class GeneratedWorkflowPage
         }
 
         return normalized;
+    }
+
+    private async Task<ApiResponseCapture> FetchApiResponseWithBrowserCookiesAsync(string pageUrl, string apiPathFragment)
+    {
+        var requestUri = BuildRequestUri(pageUrl, apiPathFragment);
+        var cookieContainer = new CookieContainer();
+        var cookies = await _page.Context.CookiesAsync(new[] { requestUri.ToString() });
+
+        foreach (var cookie in cookies)
+        {
+            var normalizedDomain = string.IsNullOrWhiteSpace(cookie.Domain)
+                ? requestUri.Host
+                : cookie.Domain.TrimStart('.');
+            var normalizedPath = string.IsNullOrWhiteSpace(cookie.Path) ? "/" : cookie.Path;
+
+            var netCookie = new System.Net.Cookie(cookie.Name, cookie.Value, normalizedPath, normalizedDomain)
+            {
+                Secure = cookie.Secure,
+                HttpOnly = cookie.HttpOnly,
+            };
+
+            if (cookie.Expires > 0)
+            {
+                netCookie.Expires = DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).UtcDateTime;
+            }
+
+            cookieContainer.Add(netCookie);
+        }
+
+        using var handler = new HttpClientHandler
+        {
+            CookieContainer = cookieContainer,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+        };
+        using var client = new HttpClient(handler);
+        client.DefaultRequestHeaders.Add("Accept", "application/json, text/plain, */*");
+        using var response = await client.GetAsync(requestUri);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        return new ApiResponseCapture(
+            (int)response.StatusCode,
+            requestUri.ToString(),
+            responseBody
+        );
+    }
+
+    private static Uri BuildRequestUri(string pageUrl, string apiPathFragment)
+    {
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var baseUri))
+        {
+            throw new InvalidOperationException($"Page URL '{pageUrl}' is not a valid absolute URI.");
+        }
+
+        if (Uri.TryCreate(apiPathFragment, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri;
+        }
+
+        return new Uri(baseUri, apiPathFragment);
     }
 
     private async Task RenderApiEvidencePanelAsync(ApiResponseCapture capture)
