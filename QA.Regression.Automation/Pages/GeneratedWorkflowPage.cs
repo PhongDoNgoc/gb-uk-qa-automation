@@ -207,9 +207,9 @@ public class GeneratedWorkflowPage
             }",
             new
             {
-                capture.RequestUrl,
-                capture.StatusCode,
-                responsePreview,
+                requestUrl = capture.RequestUrl,
+                statusCode = capture.StatusCode,
+                responsePreview = responsePreview,
             }
         );
     }
