@@ -20,6 +20,24 @@ public class GeneratedWorkflowPage
         });
     }
 
+    public async Task<int> GoToAndCaptureApiResponseStatusAsync(string pageUrl, string apiPathFragment)
+    {
+        if (string.IsNullOrWhiteSpace(apiPathFragment))
+        {
+            throw new ArgumentException("API path fragment must be provided.", nameof(apiPathFragment));
+        }
+
+        var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
+        var responseTask = _page.WaitForResponseAsync(
+            response => ResponseMatchesPath(response, normalizedApiPath)
+        );
+
+        await GoToAsync(pageUrl);
+
+        var response = await responseTask;
+        return response.Status;
+    }
+
     public async Task FillCredentialInputsAsync(string username, string password)
     {
         var emailInput = _page.Locator("input[type='email'], input[name='email'], input[autocomplete='username'], input[placeholder*='email' i]");
@@ -45,5 +63,26 @@ public class GeneratedWorkflowPage
     {
         var locator = _page.GetByText(text, new PageGetByTextOptions { Exact = false });
         await locator.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
+    }
+
+    private static string NormalizeApiPathFragment(string apiPathFragment)
+    {
+        var normalized = apiPathFragment.Trim();
+        if (!normalized.StartsWith("/"))
+        {
+            normalized = $"/{normalized}";
+        }
+
+        return normalized;
+    }
+
+    private static bool ResponseMatchesPath(IResponse response, string apiPathFragment)
+    {
+        if (Uri.TryCreate(response.Url, UriKind.Absolute, out var responseUri))
+        {
+            return responseUri.PathAndQuery.Contains(apiPathFragment, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return response.Url.Contains(apiPathFragment, StringComparison.OrdinalIgnoreCase);
     }
 }

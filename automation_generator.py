@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from azure_serialization import parse_existing_steps
+from azure_serialization import parse_existing_steps, parse_local_data_source
 
 
 @dataclass
@@ -22,6 +22,7 @@ class SuiteTestCase:
     test_case_id: int
     title: str
     steps: list[SuiteStep]
+    parameter_values: dict[str, str]
 
 
 @dataclass
@@ -82,6 +83,7 @@ def generate_automation_scripts(
             "fully_qualified_name": f"{suite_namespace}.{class_name}.{method_name}",
             "file_path": _portable_path(target_path, repo_root),
             "steps": [asdict(step) for step in test_case.steps],
+            "parameter_values": test_case.parameter_values,
         }
 
         if write_status == "skipped":
@@ -149,7 +151,14 @@ def _load_suite_source(
             )
             for index, step in enumerate(parsed_steps, start=1)
         ]
-        parsed_cases.append(SuiteTestCase(test_case_id=case_id, title=title, steps=steps))
+        parsed_cases.append(
+            SuiteTestCase(
+                test_case_id=case_id,
+                title=title,
+                steps=steps,
+                parameter_values=parse_local_data_source(suite_case.get("local_data_source")),
+            )
+        )
 
     if not parsed_cases:
         raise ValueError(f"No test cases were found in Azure Test Plan {plan_id}, Suite {suite_id}.")
@@ -187,7 +196,12 @@ def parse_suite_export_text(raw: str) -> SuiteSource:
 
         case_match = re.match(r"^\d+\.\s*\[(\d+)\]\s*(.+)$", stripped)
         if case_match:
-            current_case = SuiteTestCase(test_case_id=int(case_match.group(1)), title=case_match.group(2).strip(), steps=[])
+            current_case = SuiteTestCase(
+                test_case_id=int(case_match.group(1)),
+                title=case_match.group(2).strip(),
+                steps=[],
+                parameter_values={},
+            )
             test_cases.append(current_case)
             current_step = None
             current_field = None
@@ -256,6 +270,8 @@ def _detect_strategy(test_case: SuiteTestCase) -> str:
     all_text = " ".join(
         [test_case.title] + [step.action for step in test_case.steps] + [step.expected for step in test_case.steps]
     ).lower()
+    if _is_authenticated_api_status_case(test_case):
+        return "authenticated-api-status"
     has_credentials = (
         ("username:" in all_text or "email address:" in all_text or "email:" in all_text)
         and "password:" in all_text
@@ -276,6 +292,8 @@ def _render_test_file(
 ) -> str:
     if strategy in {"login-success", "login-failure"}:
         body = _render_login_body(test_case)
+    elif strategy == "authenticated-api-status":
+        body = _render_authenticated_api_status_body(test_case)
     else:
         body = _render_generic_body(test_case)
 
@@ -412,6 +430,68 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
     return lines
 
 
+def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]:
+    page_path = ""
+    api_path_fragment = ""
+    expected_status_code = 200
+
+    for step in test_case.steps:
+        if not page_path:
+            page_path = _extract_baseurl_reference(
+                step.action,
+                label="URL",
+                keep_query=True,
+                parameter_values=test_case.parameter_values,
+            )
+
+        if not api_path_fragment:
+            api_path_fragment = _extract_baseurl_reference(
+                step.action,
+                label="Request URL",
+                keep_query=True,
+                parameter_values=test_case.parameter_values,
+            )
+        if step.expected:
+            parsed_status_code = _extract_expected_status_code(step.expected)
+            if parsed_status_code is not None:
+                expected_status_code = parsed_status_code
+
+    if not page_path:
+        raise ValueError(
+            f"Test case {test_case.test_case_id} looks like an API status check but does not contain a page URL."
+        )
+    if not api_path_fragment:
+        raise ValueError(
+            f"Test case {test_case.test_case_id} looks like an API status check but does not contain a request URL."
+        )
+
+    api_display_name = _extract_api_display_name(test_case, api_path_fragment)
+    lines = [
+        "var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();",
+        f'var targetPageUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(page_path)}");',
+        f'var apiPathFragment = "{_escape_csharp_string(api_path_fragment)}";',
+        f"const int expectedStatusCode = {expected_status_code};",
+        'var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
+        'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");',
+        "var loginPage = new LoginPage(Page);",
+        "var workflowPage = new GeneratedWorkflowPage(Page);",
+        "",
+        "await loginPage.GoToAsync(baseUrl);",
+        "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
+        '    "Log in screen is displayed.");',
+        "",
+        "await loginPage.LoginAsync(username, password);",
+        "Assert.That(await loginPage.GetWelcomeMessageTextAsync(), Does.Contain(",
+        '    "Welcome to your ViewPoint energy portal"),',
+        '    "The expected home page welcome message was not displayed after sign in.");',
+        "",
+        "var actualStatusCode = await workflowPage.GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment);",
+        "Assert.That(actualStatusCode, Is.EqualTo(expectedStatusCode),",
+        f'    "Expected {api_display_name} to return HTTP status {expected_status_code} after sign in.");',
+    ]
+    return lines
+
+
 def _extract_first_url(value: str) -> str:
     match = re.search(r"https?://[^\s)]+", value)
     return match.group(0).rstrip(".,") if match else ""
@@ -443,6 +523,46 @@ def _extract_relative_url(source_url: str) -> str:
 
     path = parsed.path or "/"
     return urlunsplit(("", "", path, parsed.query, parsed.fragment))
+
+
+def _extract_baseurl_reference(
+    value: str,
+    *,
+    label: str,
+    keep_query: bool,
+    parameter_values: dict[str, str] | None = None,
+) -> str:
+    match = re.search(rf"{re.escape(label)}\s*:\s*(baseurl/.+)$", value, re.I)
+    if not match:
+        return ""
+
+    normalized = match.group(1).strip()
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = normalized.replace("baseURL", "baseurl").replace("'", "")
+    normalized = _replace_parameter_placeholders(normalized, parameter_values or {})
+    normalized = re.sub(r"\(.*?\)$", "", normalized).strip()
+    normalized = re.sub(r"^baseurl", "", normalized, flags=re.I).strip()
+
+    if not normalized:
+        return ""
+
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    if not keep_query or "@" in normalized:
+        normalized = normalized.split("?", 1)[0]
+
+    return normalized
+
+
+def _replace_parameter_placeholders(value: str, parameter_values: dict[str, str]) -> str:
+    if not parameter_values:
+        return value
+
+    resolved = value
+    for name, replacement in parameter_values.items():
+        resolved = re.sub(rf"@{re.escape(name)}\b", replacement, resolved, flags=re.I)
+    return resolved
 
 
 def _extract_credentials(value: str) -> tuple[str, str]:
@@ -486,6 +606,22 @@ def _escape_csharp_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _extract_expected_status_code(value: str) -> int | None:
+    match = re.search(r"status\s+code\s+should\s+be\s+(\d{3})", value, re.I)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _extract_api_display_name(test_case: SuiteTestCase, api_path_fragment: str) -> str:
+    title_match = re.search(r"verify\s+(.+?)\s+api", test_case.title, re.I)
+    if title_match:
+        return title_match.group(1).strip()
+
+    path_segment = api_path_fragment.strip("/").split("/")[-1]
+    return path_segment or "the API"
+
+
 def _delete_stale_test_case_files(tests_dir: Path, test_case_id: int, target_path: Path, *, overwrite: bool) -> None:
     stale_paths = [path for path in tests_dir.glob(f"Tc{test_case_id}*.cs") if path.resolve() != target_path.resolve()]
     if not stale_paths:
@@ -505,6 +641,19 @@ def _is_negative_login_case(test_case: SuiteTestCase) -> bool:
         or "cannot login" in test_case.title.lower()
         or "wrong credential" in test_case.title.lower()
         or "invalid credential" in test_case.title.lower()
+    )
+
+
+def _is_authenticated_api_status_case(test_case: SuiteTestCase) -> bool:
+    all_text = " ".join(
+        [test_case.title] + [step.action for step in test_case.steps] + [step.expected for step in test_case.steps]
+    ).lower()
+    return (
+        "precondition:" in all_text
+        and "logged in viewpoint portal" in all_text
+        and "response status" in all_text
+        and "status code should be" in all_text
+        and "request url:" in all_text
     )
 
 

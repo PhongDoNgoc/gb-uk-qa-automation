@@ -4,6 +4,7 @@ This repository is focused on this flow:
 
 - read existing manual test cases from Azure Test Plans
 - generate Playwright/NUnit automation scripts
+- support login flows and logged-in page API status checks
 - associate the generated automated tests back to those Azure test cases
 - validate locally
 - run from Azure Pipelines and Azure Test Plans

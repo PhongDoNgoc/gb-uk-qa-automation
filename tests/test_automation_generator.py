@@ -43,6 +43,39 @@ Test Cases: 1
    Step 1 Expected: Dashboard page is displayed.
 """
 
+API_STATUS_EXPORT = """Plan ID: 30985
+Suite ID: 31681
+Test Cases: 1
+
+1. [31861] Customer Details - Verify EnergyServiceDetails API in Customer Details page is working
+   Step 1 Action: Precondition: - Logged in ViewPoint Portal
+   Step 1 Expected:
+   Step 2 Action: Open Utilities sub-menu and click to Customer Details URL: baseURL/CustomerDetails/CustomerDetail
+   Step 2 Expected: User is navigated to Customer Details page
+   Step 3 Action: Verify the EnergyServiceDetailsAPI response status Request URL: baseURL/ CustomerDetails/ EnergyServiceDetails
+   Step 3 Expected: Status Code should be 200 OK
+"""
+
+SITE_DETAILS_STEPS_XML = """<steps id="0" last="4">
+<step id="2" type="ActionStep">
+  <parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal</parameterizedString>
+  <parameterizedString isformatted="true"></parameterizedString>
+  <description />
+</step>
+<step id="3" type="ValidateStep">
+  <parameterizedString isformatted="true">Open Utilities sub-menu and click to Customer Details&lt;br&gt;URL: baseURL/CustomerDetails/CustomerDetail</parameterizedString>
+  <parameterizedString isformatted="true">User is navigated to Customer Details page</parameterizedString>
+  <description />
+</step>
+<step id="4" type="ValidateStep">
+  <parameterizedString isformatted="true">Verify the SiteDetails API response status&lt;br&gt;Request URL: baseURL/CustomerDetails/SiteDetails?rootId='@rootID' (valid rootID)</parameterizedString>
+  <parameterizedString isformatted="true">Status Code should be 200 OK</parameterizedString>
+  <description />
+</step>
+</steps>"""
+
+SITE_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet><Table1><rootID>165</rootID></Table1></NewDataSet>"""
+
 
 class AutomationGeneratorTests(unittest.TestCase):
     def test_parse_suite_export_text_reads_steps(self):
@@ -148,6 +181,72 @@ class AutomationGeneratorTests(unittest.TestCase):
                 content,
             )
             self.assertNotIn("https://example.test/dashboard?tab=summary", content)
+
+    def test_generate_scripts_writes_authenticated_api_status_case(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+            suite_file = root / "suite_31681_testcases.txt"
+            suite_file.write_text(API_STATUS_EXPORT, encoding="utf-8")
+
+            result = generate_automation_scripts(
+                client=None,
+                suite_file=str(suite_file),
+                plan_id=None,
+                suite_id=None,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_file = Path(result["generated"][0]["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertIn("var loginPage = new LoginPage(Page);", content)
+            self.assertIn('var targetPageUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("/CustomerDetails/CustomerDetail");', content)
+            self.assertIn('var apiPathFragment = "/CustomerDetails/EnergyServiceDetails";', content)
+            self.assertIn("const int expectedStatusCode = 200;", content)
+            self.assertIn(
+                "var actualStatusCode = await workflowPage.GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment);",
+                content,
+            )
+            self.assertIn('Expected EnergyServiceDetails to return HTTP status 200 after sign in.', content)
+            self.assertEqual(result["generated"][0]["strategy"], "authenticated-api-status")
+
+    def test_generate_scripts_substitutes_parameter_values_into_api_request_url(self):
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [
+                    {
+                        "id": "31863",
+                        "title": "Customer Details - Verify SiteDetails API in Customer Details page is working",
+                        "state": "Design",
+                        "steps": SITE_DETAILS_STEPS_XML,
+                        "local_data_source": SITE_DETAILS_LOCAL_DATA_SOURCE,
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+
+            result = generate_automation_scripts(
+                client=FakeClient(),
+                suite_file=None,
+                plan_id=30985,
+                suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_file = Path(result["generated"][0]["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertIn('var apiPathFragment = "/CustomerDetails/SiteDetails?rootId=165";', content)
+            self.assertEqual(result["generated"][0]["parameter_values"], {"rootID": "165"})
 
 
 if __name__ == "__main__":

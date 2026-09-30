@@ -8,12 +8,12 @@ using QA.Regression.Automation.Utilities;
 namespace QA.Regression.Automation.Tests.Generated.Suite31681;
 
 [TestFixture]
-public class Tc31988VerifyUserCannotLogInWithWrongCredentialsTests : BaseTest
+public class Tc31988VerifyUserCannotLogInWithInvalidCredentialsTests : BaseTest
 {
     [Test]
     [Property("TestCaseId", "31988")]
-    [Description("ADO #31988 - Verify user cannot log in with wrong credentials")]
-    public async Task Tc31988_VerifyUserCannotLogInWithWrongCredentials()
+    [Description("ADO #31988 - Verify user cannot log in with invalid credentials")]
+    public async Task Tc31988_VerifyUserCannotLogInWithInvalidCredentials()
     {
         var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();
         var username = TestEnvironmentSettings.ResolveOptionalEnvironmentVariable("VIEWPOINT_INVALID_USERNAME")

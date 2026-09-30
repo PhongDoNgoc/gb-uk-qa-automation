@@ -878,6 +878,7 @@ class AzureDevOpsClient:
                     "title": details.get("title") or title or "",
                     "state": details.get("state") or "",
                     "steps": details.get("steps"),
+                    "local_data_source": details.get("local_data_source"),
                 }
             )
 
@@ -942,6 +943,8 @@ class AzureDevOpsClient:
             "System.State",
             "System.Description",
             "Microsoft.VSTS.TCM.Steps",
+            "Microsoft.VSTS.TCM.Parameters",
+            "Microsoft.VSTS.TCM.LocalDataSource",
             "Microsoft.VSTS.Common.Priority",
             "Microsoft.VSTS.TCM.AutomatedTestId",
             "Microsoft.VSTS.TCM.AutomatedTestName",
@@ -961,6 +964,8 @@ class AzureDevOpsClient:
             "state": f.get("System.State"),
             "description": f.get("System.Description"),
             "steps": f.get("Microsoft.VSTS.TCM.Steps"),
+            "parameters": f.get("Microsoft.VSTS.TCM.Parameters"),
+            "local_data_source": f.get("Microsoft.VSTS.TCM.LocalDataSource"),
             "priority": f.get("Microsoft.VSTS.Common.Priority"),
             "automated_test_id": f.get("Microsoft.VSTS.TCM.AutomatedTestId"),
             "automated_test_name": f.get("Microsoft.VSTS.TCM.AutomatedTestName"),
