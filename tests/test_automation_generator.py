@@ -76,6 +76,19 @@ SITE_DETAILS_STEPS_XML = """<steps id="0" last="4">
 
 SITE_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet><Table1><rootID>165</rootID></Table1></NewDataSet>"""
 
+CUSTOMER_DETAIL_EXPORT = """Plan ID: 30985
+Suite ID: 31681
+Test Cases: 1
+
+1. [31869] Unit Details - Verify GetCustomerDetail API in Unit Details page is working
+   Step 1 Action: Precondition: - Logged in ViewPoint Portal
+   Step 1 Expected:
+   Step 2 Action: Open Utilities sub-menu and click to Unit Details URL: baseURL/UnitDetails/UnitDetail
+   Step 2 Expected: User is navigated to Unit Details page
+   Step 3 Action: Verify the GetCustomerDetail API response status Request URL: baseURL/http://unitdetails/GetCustomerDetail?controlUnitId='controlUnitID'&marketUnitId='marketUnitID' (valid controlunitID and valid marketunitID)
+   Step 3 Expected: Status Code should be 200 OK
+"""
+
 
 class AutomationGeneratorTests(unittest.TestCase):
     def test_parse_suite_export_text_reads_steps(self):
@@ -247,6 +260,32 @@ class AutomationGeneratorTests(unittest.TestCase):
 
             self.assertIn('var apiPathFragment = "/CustomerDetails/SiteDetails?rootId=165";', content)
             self.assertEqual(result["generated"][0]["parameter_values"], {"rootID": "165"})
+
+    def test_generate_scripts_normalizes_embedded_absolute_request_url(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+            suite_file = root / "suite_31681_testcases.txt"
+            suite_file.write_text(CUSTOMER_DETAIL_EXPORT, encoding="utf-8")
+
+            result = generate_automation_scripts(
+                client=None,
+                suite_file=str(suite_file),
+                plan_id=None,
+                suite_id=None,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_file = Path(result["generated"][0]["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertIn(
+                'var apiPathFragment = "/UnitDetails/GetCustomerDetail?controlUnitId=controlUnitID&marketUnitId=marketUnitID";',
+                content,
+            )
 
 
 if __name__ == "__main__":

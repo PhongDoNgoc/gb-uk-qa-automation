@@ -549,6 +549,8 @@ def _extract_baseurl_reference(
     if not normalized.startswith("/"):
         normalized = f"/{normalized}"
 
+    normalized = _normalize_embedded_absolute_reference(normalized)
+
     if not keep_query or "@" in normalized:
         normalized = normalized.split("?", 1)[0]
 
@@ -563,6 +565,25 @@ def _replace_parameter_placeholders(value: str, parameter_values: dict[str, str]
     for name, replacement in parameter_values.items():
         resolved = re.sub(rf"@{re.escape(name)}\b", replacement, resolved, flags=re.I)
     return resolved
+
+
+def _normalize_embedded_absolute_reference(value: str) -> str:
+    match = re.match(r"^/https?://([^/]+)(/.*)?$", value, re.I)
+    if not match:
+        return value
+
+    host_segment = _normalize_embedded_host_segment(match.group(1))
+    path_segment = match.group(2) or "/"
+    return f"/{host_segment}{path_segment}"
+
+
+def _normalize_embedded_host_segment(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", " ", value).strip()
+    lowered = cleaned.lower().replace(" ", "")
+    if lowered.endswith("details") and len(lowered) > len("details"):
+        prefix = lowered[: -len("details")]
+        return f"{_to_pascal_case(prefix)}Details"
+    return _to_pascal_case(cleaned)
 
 
 def _extract_credentials(value: str) -> tuple[str, str]:
