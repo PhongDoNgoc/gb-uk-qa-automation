@@ -17,7 +17,7 @@ public class Tc31869UnitDetailsVerifyGetCustomerDetailAPIInUnitDetailsPageIsWork
     {
         var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();
         var targetPageUrl = TestEnvironmentSettings.ResolveUrlForEnvironment("/UnitDetails/UnitDetail");
-        var apiPathFragment = "/UnitDetails/GetCustomerDetail?controlUnitId=controlUnitID&marketUnitId=marketUnitID";
+        var apiPathFragment = "/UnitDetails/GetCustomerDetail?controlUnitId=13&marketUnitId=2";
         const int expectedStatusCode = 200;
         var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
         var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");
