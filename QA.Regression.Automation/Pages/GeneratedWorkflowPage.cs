@@ -51,12 +51,38 @@ public class GeneratedWorkflowPage
 
     public async Task ClickButtonAsync(string buttonText)
     {
-        var locator = _page.Locator(
-            $"button:has-text('{buttonText}'), input[type='submit'][value='{buttonText}'], [role='button']:has-text('{buttonText}')"
-        );
+        var locators = new[]
+        {
+            _page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = buttonText, Exact = false }),
+            _page.Locator(
+                $"button:has-text('{buttonText}'), input[type='submit'][value='{buttonText}'], input[type='button'][value='{buttonText}'], [role='button']:has-text('{buttonText}')"
+            ),
+            _page.Locator(
+                $"[aria-label*='{buttonText}' i], [title*='{buttonText}' i], input[type='submit'][value*='{buttonText}' i], input[type='button'][value*='{buttonText}' i]"
+            ),
+        };
 
-        await locator.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-        await locator.First.ClickAsync();
+        foreach (var locator in locators)
+        {
+            try
+            {
+                await locator.First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 10000,
+                });
+                await locator.First.ScrollIntoViewIfNeededAsync();
+                await locator.First.ClickAsync();
+                return;
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+
+        throw new TimeoutException(
+            $"Timeout 30000ms exceeded while waiting for a clickable control matching '{buttonText}'."
+        );
     }
 
     public async Task AssertTextVisibleAsync(string text)
