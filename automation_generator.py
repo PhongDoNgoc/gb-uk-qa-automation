@@ -385,6 +385,7 @@ def _render_login_body(test_case: SuiteTestCase) -> list[str]:
 
 def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
     lines = ["var workflowPage = new GeneratedWorkflowPage(Page);"]
+    requires_authenticated_session = _has_logged_in_precondition(test_case)
 
     username, password = _extract_credentials(" ".join(step.action for step in test_case.steps))
     if username:
@@ -401,6 +402,24 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
             ]
         )
 
+    if requires_authenticated_session:
+        lines = [
+            "var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();",
+            'var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");',
+            'var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");',
+            "var loginPage = new LoginPage(Page);",
+            "var workflowPage = new GeneratedWorkflowPage(Page);",
+            "",
+            "await loginPage.GoToAsync(baseUrl);",
+            "Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,",
+            '    "Log in screen is displayed.");',
+            "",
+            "await loginPage.LoginAsync(username, password);",
+            "Assert.That(await loginPage.GetWelcomeMessageTextAsync(), Does.Contain(",
+            '    "Welcome to your ViewPoint energy portal"),',
+            '    "The expected home page welcome message was not displayed after sign in.");',
+        ]
+
     for step in test_case.steps:
         if lines and lines[-1] != "":
             lines.append("")
@@ -408,6 +427,17 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
         url = _extract_first_url(step.action)
         if url:
             lines.append(f"await workflowPage.GoToAsync({_build_resolved_url_expression(url)});")
+        else:
+            baseurl_reference = _extract_baseurl_reference(
+                step.action,
+                label="URL",
+                keep_query=True,
+                parameter_values=test_case.parameter_values,
+            )
+            if baseurl_reference:
+                lines.append(
+                    f'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(baseurl_reference)}"));'
+                )
 
         action_lower = step.action.lower()
         if (
@@ -602,7 +632,7 @@ def _extract_click_target(value: str) -> str:
     match = re.search(r"click\s+['\"]([^'\"]+)['\"]", value, re.I)
     if match:
         return match.group(1).strip()
-    match = re.search(r"click\s+([A-Za-z0-9 _-]+)$", value, re.I)
+    match = re.search(r"click\s+(?:on\s+)?([A-Za-z0-9 _-]+?)(?:\s+button)?$", value, re.I)
     return match.group(1).strip() if match else ""
 
 
@@ -676,6 +706,13 @@ def _is_authenticated_api_status_case(test_case: SuiteTestCase) -> bool:
         and "status code should be" in all_text
         and "request url:" in all_text
     )
+
+
+def _has_logged_in_precondition(test_case: SuiteTestCase) -> bool:
+    all_text = " ".join(
+        [step.action for step in test_case.steps] + [step.expected for step in test_case.steps]
+    ).lower()
+    return "precondition:" in all_text and "logged in viewpoint portal" in all_text
 
 
 def _is_negative_login_expected(value: str) -> bool:

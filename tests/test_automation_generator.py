@@ -89,6 +89,19 @@ Test Cases: 1
    Step 3 Expected: Status Code should be 200 OK
 """
 
+REFRESH_EXPORT = """Plan ID: 30985
+Suite ID: 31681
+Test Cases: 1
+
+1. [31866] Unit Details - Verify Refresh in Unit Details page is working
+   Step 1 Action: Precondition: - Logged in ViewPoint Portal
+   Step 1 Expected:
+   Step 2 Action: Open Utilities sub-menu and click to Unit Details URL: baseURL/UnitDetails/UnitDetail
+   Step 2 Expected: User is navigated to Unit Details page
+   Step 3 Action: Click on Refresh button
+   Step 3 Expected: Data on grid should be reloaded and updated
+"""
+
 
 class AutomationGeneratorTests(unittest.TestCase):
     def test_parse_suite_export_text_reads_steps(self):
@@ -286,6 +299,34 @@ class AutomationGeneratorTests(unittest.TestCase):
                 'var apiPathFragment = "/UnitDetails/GetCustomerDetail?controlUnitId=controlUnitID&marketUnitId=marketUnitID";',
                 content,
             )
+
+    def test_generate_scripts_logs_in_and_navigates_for_authenticated_generic_case(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+            suite_file = root / "suite_31681_testcases.txt"
+            suite_file.write_text(REFRESH_EXPORT, encoding="utf-8")
+
+            result = generate_automation_scripts(
+                client=None,
+                suite_file=str(suite_file),
+                plan_id=None,
+                suite_id=None,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_file = Path(result["generated"][0]["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertIn("var loginPage = new LoginPage(Page);", content)
+            self.assertIn(
+                'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("/UnitDetails/UnitDetail"));',
+                content,
+            )
+            self.assertIn('await workflowPage.ClickButtonAsync("Refresh");', content)
 
 
 if __name__ == "__main__":

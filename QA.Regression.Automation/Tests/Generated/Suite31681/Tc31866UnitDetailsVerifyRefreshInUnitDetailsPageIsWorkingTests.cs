@@ -15,15 +15,28 @@ public class Tc31866UnitDetailsVerifyRefreshInUnitDetailsPageIsWorkingTests : Ba
     [Description("ADO #31866 - Unit Details - Verify Refresh in Unit Details page is working")]
     public async Task Tc31866_UnitDetailsVerifyRefreshInUnitDetailsPageIsWorking()
     {
+        var baseUrl = TestEnvironmentSettings.ResolveBaseUrlForEnvironment();
+        var username = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_USERNAME");
+        var password = TestEnvironmentSettings.RequireEnvironmentVariable("VIEWPOINT_PASSWORD");
+        var loginPage = new LoginPage(Page);
         var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await loginPage.GoToAsync(baseUrl);
+        Assert.That(await loginPage.IsLoginScreenDisplayedAsync(), Is.True,
+            "Log in screen is displayed.");
+
+        await loginPage.LoginAsync(username, password);
+        Assert.That(await loginPage.GetWelcomeMessageTextAsync(), Does.Contain(
+            "Welcome to your ViewPoint energy portal"),
+            "The expected home page welcome message was not displayed after sign in.");
 
         // Step 1: Precondition: - Logged in ViewPoint Portal
         // TODO: Translate expected result manually: 
 
         // Step 2: Open Utilities sub-menu and click to Unit Details URL: baseURL/UnitDetails/UnitDetail
-        // TODO: Translate expected result manually: User is navigated to Unit Details page
+        await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("/UnitDetails/UnitDetail"));
 
         // Step 3: Click on Refresh button
-        await workflowPage.ClickButtonAsync("on Refresh button");
+        await workflowPage.ClickButtonAsync("Refresh");
     }
 }
