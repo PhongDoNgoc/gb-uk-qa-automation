@@ -1,225 +1,105 @@
-schedules:
-- cron: "0 2 * * 1-5"
-  displayName: Nightly Automated Regression Run
-  branches:
-    include:
-    - main
-  always: true
-
-trigger:
-- main
+trigger: none
+pr: none
 
 parameters:
 - name: targetEnvironment
-  displayName: Target environment name
+  displayName: Target environment
   type: string
-  default: PROD
-- name: agentPoolMode
-  displayName: Agent pool mode
-  type: string
-  default: Auto
+  default: DEV
   values:
-  - Auto
-  - Hosted
-  - SelfHosted
-- name: selfHostedPoolName
-  displayName: Self-hosted pool name
-  type: string
-  default: Default
+  - DEV
+  - STAGE
+
+pool:
+  name: SelfHostedAP-Dev-NE-Swarm
+  demands:
+  - Agent.OS -equals Linux
 
 variables:
   buildConfiguration: Release
   TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
 
-jobs:
-- ${{ if or(eq(parameters.agentPoolMode, 'SelfHosted'), and(eq(parameters.agentPoolMode, 'Auto'), ne(parameters.targetEnvironment, 'PROD'))) }}:
-  - job: RunRegressionOnSelfHosted
-    displayName: Run regression on self-hosted agent
-    pool:
-      name: ${{ parameters.selfHostedPoolName }}
-    steps:
-    - task: UseDotNet@2
-      displayName: 'Use .NET 10 SDK'
-      inputs:
-        packageType: 'sdk'
-        version: '10.0.x'
+steps:
+- task: UseDotNet@2
+  displayName: Install .NET 10 SDK
+  inputs:
+    packageType: sdk
+    version: 10.0.x
 
-    - task: DotNetCoreCLI@2
-      displayName: Restore NuGet packages
-      inputs:
-        command: restore
-        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
+- task: DotNetCoreCLI@2
+  displayName: Restore test project
+  inputs:
+    command: restore
+    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
 
-    - task: DotNetCoreCLI@2
-      displayName: Build test project
-      inputs:
-        command: build
-        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
-        arguments: '--configuration $(buildConfiguration) --no-restore'
+- task: DotNetCoreCLI@2
+  displayName: Build test project
+  inputs:
+    command: build
+    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
+    arguments: '--configuration $(buildConfiguration) --no-restore'
 
-    - task: PowerShell@2
-      displayName: Install Playwright browsers
-      inputs:
-        targetType: inline
-        script: |
-          & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
+- task: Bash@3
+  displayName: Install Playwright Chromium
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      bash QA.Regression.Automation/bin/$(buildConfiguration)/net10.0/playwright.sh install chromium
 
-    - task: VisualStudioTestPlatformInstaller@1
-      displayName: Install Visual Studio Test Platform
-      inputs:
-        packageFeedSelector: nugetOrg
-        versionSelector: latestStable
+- task: Bash@3
+  displayName: Validate test settings
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      : "${VIEWPOINT_USERNAME:?Pipeline variable VIEWPOINT_USERNAME is required}"
+      : "${VIEWPOINT_PASSWORD:?Pipeline variable VIEWPOINT_PASSWORD is required}"
+      : "${VIEWPOINT_INVALID_PASSWORD:?Pipeline variable VIEWPOINT_INVALID_PASSWORD is required}"
 
-    - task: PowerShell@2
-      displayName: Validate required test environment variables
-      inputs:
-        targetType: inline
-        script: |
-          $required = @(
-            'VIEWPOINT_USERNAME',
-            'VIEWPOINT_PASSWORD',
-            'VIEWPOINT_INVALID_PASSWORD'
-          )
+      url_variable="VIEWPOINT_BASE_URL_${TEST_TARGET_ENV}"
+      if [[ -z "${!url_variable:-}" ]]; then
+        echo "Pipeline variable ${url_variable} is required for ${TEST_TARGET_ENV}."
+        exit 1
+      fi
 
-          $selectedEnvironment = if ([string]::IsNullOrWhiteSpace($env:TEST_TARGET_ENV)) { 'PROD' } else { $env:TEST_TARGET_ENV.Trim().ToUpperInvariant() }
-          $required += "VIEWPOINT_BASE_URL_$selectedEnvironment"
+      echo "Validated test settings for ${TEST_TARGET_ENV}."
+  env:
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
-          $missing = @()
-          foreach ($name in $required) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              $missing += $name
-            }
-          }
+- task: DotNetCoreCLI@2
+  displayName: Run Playwright/NUnit tests
+  inputs:
+    command: test
+    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
+    arguments: >-
+      --configuration $(buildConfiguration)
+      --no-build
+      --logger "trx;LogFileName=regression.trx"
+      --results-directory "$(Agent.TempDirectory)/TestResults"
+    publishTestResults: false
+  env:
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
-          if ($missing.Count -gt 0) {
-            throw "Missing required environment variable(s) for test execution: $($missing -join ', ')"
-          }
-
-          Write-Host "Validated required environment variables for TEST_TARGET_ENV=$selectedEnvironment."
-      env:
-        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
-        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
-        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
-        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
-        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
-        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
-        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
-        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
-
-    - task: VSTest@3
-      displayName: Execute tests and publish ADO results
-      inputs:
-        testSelector: testAssemblies
-        testAssemblyVer2: |
-          **\bin\$(buildConfiguration)\net10.0\QA.Regression.Automation.dll
-          !**\*TestAdapter.dll
-          !**\obj\**
-        searchFolder: '$(System.DefaultWorkingDirectory)'
-        runInParallel: true
-        publishRunAttachments: true
-        vsTestVersion: toolsInstaller
-      env:
-        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
-        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
-        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
-        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
-        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
-        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
-        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
-        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
-
-- ${{ else }}:
-  - job: RunRegressionOnHosted
-    displayName: Run regression on hosted agent
-    pool:
-      vmImage: windows-latest
-    steps:
-    - task: UseDotNet@2
-      displayName: 'Use .NET 10 SDK'
-      inputs:
-        packageType: 'sdk'
-        version: '10.0.x'
-
-    - task: DotNetCoreCLI@2
-      displayName: Restore NuGet packages
-      inputs:
-        command: restore
-        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
-
-    - task: DotNetCoreCLI@2
-      displayName: Build test project
-      inputs:
-        command: build
-        projects: QA.Regression.Automation\QA.Regression.Automation.csproj
-        arguments: '--configuration $(buildConfiguration) --no-restore'
-
-    - task: PowerShell@2
-      displayName: Install Playwright browsers
-      inputs:
-        targetType: inline
-        script: |
-          & .\QA.Regression.Automation\bin\$(buildConfiguration)\net10.0\playwright.ps1 install
-
-    - task: VisualStudioTestPlatformInstaller@1
-      displayName: Install Visual Studio Test Platform
-      inputs:
-        packageFeedSelector: nugetOrg
-        versionSelector: latestStable
-
-    - task: PowerShell@2
-      displayName: Validate required test environment variables
-      inputs:
-        targetType: inline
-        script: |
-          $required = @(
-            'VIEWPOINT_USERNAME',
-            'VIEWPOINT_PASSWORD',
-            'VIEWPOINT_INVALID_PASSWORD'
-          )
-
-          $selectedEnvironment = if ([string]::IsNullOrWhiteSpace($env:TEST_TARGET_ENV)) { 'PROD' } else { $env:TEST_TARGET_ENV.Trim().ToUpperInvariant() }
-          $required += "VIEWPOINT_BASE_URL_$selectedEnvironment"
-
-          $missing = @()
-          foreach ($name in $required) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              $missing += $name
-            }
-          }
-
-          if ($missing.Count -gt 0) {
-            throw "Missing required environment variable(s) for test execution: $($missing -join ', ')"
-          }
-
-          Write-Host "Validated required environment variables for TEST_TARGET_ENV=$selectedEnvironment."
-      env:
-        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
-        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
-        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
-        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
-        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
-        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
-        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
-        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
-
-    - task: VSTest@3
-      displayName: Execute tests and publish ADO results
-      inputs:
-        testSelector: testAssemblies
-        testAssemblyVer2: |
-          **\bin\$(buildConfiguration)\net10.0\QA.Regression.Automation.dll
-          !**\*TestAdapter.dll
-          !**\obj\**
-        searchFolder: '$(System.DefaultWorkingDirectory)'
-        runInParallel: true
-        publishRunAttachments: true
-        vsTestVersion: toolsInstaller
-      env:
-        TEST_TARGET_ENV: $(TEST_TARGET_ENV)
-        VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
-        VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
-        VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
-        VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
-        VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
-        VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
-        VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+- task: PublishTestResults@2
+  displayName: Publish NUnit results
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: regression.trx
+    searchFolder: $(Agent.TempDirectory)/TestResults
+    failTaskOnFailedTests: true
+    failTaskOnMissingResultsFile: true
+    publishRunAttachments: true

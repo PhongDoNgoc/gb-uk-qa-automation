@@ -126,33 +126,24 @@ You can copy [.env.example](</C:/Users/lan.le/OneDrive - Endeco-Technologies/Des
 
 ## Hosted vs self-hosted agents
 
-The pipeline YAML files support:
+The manually triggered `QA.Regression.Automation/azure-pipelines.yml` runs on the Linux self-hosted pool `SelfHostedAP-Dev-NE-Swarm`. Choose `DEV` or `STAGE` from the `targetEnvironment` parameter each time you run it.
 
-- `targetEnvironment`
-- `agentPoolMode`
-- `selfHostedPoolName`
-
-Supported modes:
-
-- `Auto`: hosted for `PROD`, self-hosted for non-`PROD`
-- `Hosted`: always use Microsoft-hosted `windows-latest`
-- `SelfHosted`: always use the selected self-hosted pool
+This CI pipeline uses `dotnet test` and publishes TRX results. It does not use the Azure Test Plans on-demand VSTest flow.
 
 ## Azure variable checklist
 
-Create these Azure Pipeline variables before running across multiple environments:
+Create these Azure Pipeline variables before running:
 
 - `VIEWPOINT_USERNAME`
 - `VIEWPOINT_PASSWORD`
 - `VIEWPOINT_INVALID_USERNAME` (optional; defaults to `VIEWPOINT_USERNAME` if not set)
 - `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
-- `VIEWPOINT_BASE_URL_PROD`
 - `VIEWPOINT_BASE_URL_DEV`
 - `VIEWPOINT_BASE_URL_STAGE`
 
-These variables should be configured in Azure DevOps pipeline variables or a variable group. The checked-in YAML files no longer supply a default PROD URL.
-If you store them as secret variables in Azure DevOps, the pipeline YAML now maps them explicitly into the `VSTest` task environment so the NUnit test process can read them.
-The pipeline also includes a preflight validation step that checks the required variable names before starting `VSTest`, so missing configuration fails fast with a clearer error.
+Configure these in Azure DevOps pipeline variables or a variable group. Mark usernames/passwords as secret as appropriate. Set the DEV and STAGE URLs to the actual environment base URLs. The pipeline validates the selected environment's URL and credentials before running tests.
+
+The Linux agent needs .NET 10, network/VPN access to both target environments, and the Linux dependencies required by Playwright Chromium.
 
 Optional later:
 
