@@ -14,6 +14,7 @@ pool:
   name: SelfHostedAP-Dev-NE-Swarm
   demands:
   - Agent.OS -equals Linux
+  - Agent.Name -equals gbvmdsmanagerdne01
 
 variables:
   buildConfiguration: Release
