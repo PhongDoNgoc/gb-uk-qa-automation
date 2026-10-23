@@ -10,10 +10,17 @@ public class BaseTest
     protected IBrowser Browser = null!;
     protected IBrowserContext Context = null!;
     private IPlaywright? _playwright;
+    private bool _tracingStarted;
 
     [SetUp]
     public async Task SetUp()
     {
+        Page = null!;
+        Browser = null!;
+        Context = null!;
+        _playwright = null;
+        _tracingStarted = false;
+
         _playwright = await Playwright.CreateAsync();
         Browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
@@ -30,6 +37,7 @@ public class BaseTest
             Snapshots = true,
             Sources = true,
         });
+        _tracingStarted = true;
 
         Page = await Context.NewPageAsync();
     }
@@ -41,24 +49,55 @@ public class BaseTest
         Directory.CreateDirectory(artifactDir);
 
         var testName = SanitizeFileName(TestContext.CurrentContext.Test.Name);
-        var screenshotPath = Path.Combine(artifactDir, $"{testName}.png");
-        await Page.ScreenshotAsync(new PageScreenshotOptions
+        try
         {
-            Path = screenshotPath,
-            FullPage = true,
-        });
-        var screenshotAttachmentName = TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Failed
-            ? "Failure screenshot"
-            : "Test screenshot";
-        TestContext.AddTestAttachment(screenshotPath, screenshotAttachmentName);
+            if (Page is not null)
+            {
+                var screenshotPath = Path.Combine(artifactDir, $"{testName}.png");
+                await Page.ScreenshotAsync(new PageScreenshotOptions
+                {
+                    Path = screenshotPath,
+                    FullPage = true,
+                });
+                var screenshotAttachmentName = TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Failed
+                    ? "Failure screenshot"
+                    : "Test screenshot";
+                TestContext.AddTestAttachment(screenshotPath, screenshotAttachmentName);
+            }
 
-        var tracePath = Path.Combine(artifactDir, $"{testName}.zip");
-        await Context.Tracing.StopAsync(new TracingStopOptions { Path = tracePath });
-        TestContext.AddTestAttachment(tracePath, "Playwright trace");
+            if (Context is not null && _tracingStarted)
+            {
+                var tracePath = Path.Combine(artifactDir, $"{testName}.zip");
+                await Context.Tracing.StopAsync(new TracingStopOptions { Path = tracePath });
+                _tracingStarted = false;
+                TestContext.AddTestAttachment(tracePath, "Playwright trace");
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (Context is not null)
+                {
+                    await Context.CloseAsync();
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (Browser is not null)
+                    {
+                        await Browser.CloseAsync();
+                    }
+                }
+                finally
+                {
+                    _playwright?.Dispose();
+                }
+            }
+        }
 
-        await Context.CloseAsync();
-        await Browser.CloseAsync();
-        _playwright?.Dispose();
     }
 
     private static bool ResolveHeadlessMode()
