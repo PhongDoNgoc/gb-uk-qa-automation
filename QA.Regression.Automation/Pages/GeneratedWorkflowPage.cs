@@ -19,11 +19,26 @@ public class GeneratedWorkflowPage
 
     public async Task GoToAsync(string url)
     {
-        await _page.GotoAsync(url, new PageGotoOptions
+        var targetUri = new Uri(url, UriKind.Absolute);
+        var isSameOrigin = Uri.TryCreate(_page.Url, UriKind.Absolute, out var currentUri)
+            && currentUri.GetLeftPart(UriPartial.Authority).Equals(
+                targetUri.GetLeftPart(UriPartial.Authority),
+                StringComparison.OrdinalIgnoreCase);
+        var navigationItem = isSameOrigin ? GetNavigationItem(targetUri.AbsolutePath) : null;
+        if (navigationItem is not null)
         {
-            WaitUntil = WaitUntilState.NetworkIdle,
-            Timeout = 60000,
-        });
+            await NavigateThroughUtilitiesAsync(targetUri, navigationItem);
+        }
+        else
+        {
+            await _page.GotoAsync(url, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 60000,
+            });
+        }
+
+        await WaitForPageReadyAsync(navigationItem);
     }
 
     public async Task<int> GoToAndCaptureApiResponseStatusAsync(string pageUrl, string apiPathFragment)
@@ -56,47 +71,7 @@ public class GeneratedWorkflowPage
     {
         if (buttonText.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
         {
-            await _page.WaitForLoadStateAsync(
-                LoadState.Load,
-                new PageWaitForLoadStateOptions { Timeout = 60000 });
-
-            var refreshSelector = string.Join(", ", new[]
-            {
-                "button:has([class*='refresh' i])",
-                "button[class*='refresh' i]",
-                "[role='button']:has([class*='refresh' i])",
-                "[role='button'][class*='refresh' i]",
-                "a:has([class*='refresh' i])",
-                "a[class*='refresh' i]",
-                "button:has([class*='sync' i])",
-                "button[class*='sync' i]",
-                "[role='button']:has([class*='sync' i])",
-                "[role='button'][class*='sync' i]",
-                "a:has([class*='sync' i])",
-                "a[class*='sync' i]",
-                "button:has([class*='reload' i])",
-                "button[class*='reload' i]",
-                "[role='button']:has([class*='reload' i])",
-                "[role='button'][class*='reload' i]",
-                "a:has([class*='reload' i])",
-                "a[class*='reload' i]",
-                "button:has([class*='rotate' i])",
-                "button[class*='rotate' i]",
-                "[role='button']:has([class*='rotate' i])",
-                "[role='button'][class*='rotate' i]",
-                "a:has([class*='rotate' i])",
-                "a[class*='rotate' i]",
-                "button:has([data-icon*='refresh' i])",
-                "[role='button']:has([data-icon*='refresh' i])",
-                "button:has-text('Refresh')",
-                "input[type='submit'][value*='Refresh' i]",
-                "input[type='button'][value*='Refresh' i]",
-                "[role='button']:has-text('Refresh')",
-                "a:has-text('Refresh')",
-                "[aria-label*='Refresh' i]",
-                "[title*='Refresh' i]",
-            });
-            var refreshControl = _page.Locator(refreshSelector).First;
+            var refreshControl = GetRefreshControlLocator();
 
             try
             {
@@ -152,6 +127,155 @@ public class GeneratedWorkflowPage
         throw new TimeoutException(
             $"Timeout 30000ms exceeded while waiting for a clickable control matching '{buttonText}' on page '{_page.Url}'."
         );
+    }
+
+    internal static string? GetNavigationItem(string path)
+    {
+        var normalizedPath = path.TrimEnd('/');
+        if (normalizedPath.Equals("/UnitDetails/UnitDetail", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Unit Details";
+        }
+
+        if (normalizedPath.Equals("/CustomerDetails/CustomerDetail", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Customer Details";
+        }
+
+        return null;
+    }
+
+    private async Task NavigateThroughUtilitiesAsync(Uri targetUri, string navigationItem)
+    {
+        if (PathsMatch(new Uri(_page.Url).AbsolutePath, targetUri.AbsolutePath))
+        {
+            return;
+        }
+
+        var targetLink = _page.GetByRole(
+            AriaRole.Link,
+            new PageGetByRoleOptions { Name = navigationItem, Exact = true });
+
+        if (!await targetLink.IsVisibleAsync())
+        {
+            var utilitiesMenu = _page.GetByText("Utilities", new PageGetByTextOptions { Exact = true }).First;
+            await utilitiesMenu.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 30000,
+            });
+            await utilitiesMenu.ClickAsync();
+        }
+
+        await targetLink.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 30000,
+        });
+        await targetLink.ClickAsync();
+        await _page.WaitForLoadStateAsync(
+            LoadState.NetworkIdle,
+            new PageWaitForLoadStateOptions { Timeout = 60000 });
+
+        if (!PathsMatch(new Uri(_page.Url).AbsolutePath, targetUri.AbsolutePath))
+        {
+            throw new InvalidOperationException(
+                $"Selecting '{navigationItem}' navigated to '{_page.Url}' instead of '{targetUri.AbsolutePath}'.");
+        }
+    }
+
+    private async Task WaitForPageReadyAsync(string? navigationItem)
+    {
+        if (navigationItem is null)
+        {
+            return;
+        }
+
+        var heading = _page.GetByRole(
+            AriaRole.Heading,
+            new PageGetByRoleOptions { Name = navigationItem, Exact = true }).First;
+        await heading.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 60000,
+        });
+
+        if (navigationItem.Equals("Unit Details", StringComparison.Ordinal))
+        {
+            var exportControl = _page.Locator(
+                "button:has-text('Export to Excel'), a:has-text('Export to Excel'), " +
+                "[role='button']:has-text('Export to Excel')");
+            await exportControl.First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 90000,
+            });
+
+            await GetRefreshControlLocator().WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 90000,
+            });
+
+            var gridRow = _page.Locator(
+                "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr");
+            await gridRow.First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 90000,
+            });
+        }
+
+        await _page.WaitForLoadStateAsync(
+            LoadState.NetworkIdle,
+            new PageWaitForLoadStateOptions { Timeout = 60000 });
+    }
+
+    private ILocator GetRefreshControlLocator()
+    {
+        var refreshSelector = string.Join(", ", new[]
+        {
+            "button:has([class*='refresh' i])",
+            "button[class*='refresh' i]",
+            "[role='button']:has([class*='refresh' i])",
+            "[role='button'][class*='refresh' i]",
+            "a:has([class*='refresh' i])",
+            "a[class*='refresh' i]",
+            "button:has([class*='sync' i])",
+            "button[class*='sync' i]",
+            "[role='button']:has([class*='sync' i])",
+            "[role='button'][class*='sync' i]",
+            "a:has([class*='sync' i])",
+            "a[class*='sync' i]",
+            "button:has([class*='reload' i])",
+            "button[class*='reload' i]",
+            "[role='button']:has([class*='reload' i])",
+            "[role='button'][class*='reload' i]",
+            "a:has([class*='reload' i])",
+            "a[class*='reload' i]",
+            "button:has([class*='rotate' i])",
+            "button[class*='rotate' i]",
+            "[role='button']:has([class*='rotate' i])",
+            "[role='button'][class*='rotate' i]",
+            "a:has([class*='rotate' i])",
+            "a[class*='rotate' i]",
+            "button:has([data-icon*='refresh' i])",
+            "[role='button']:has([data-icon*='refresh' i])",
+            "button:has-text('Refresh')",
+            "input[type='submit'][value*='Refresh' i]",
+            "input[type='button'][value*='Refresh' i]",
+            "[role='button']:has-text('Refresh')",
+            "a:has-text('Refresh')",
+            "[aria-label*='Refresh' i]",
+            "[title*='Refresh' i]",
+            "[data-original-title*='refresh' i]",
+        });
+        return _page.Locator(refreshSelector).First;
+    }
+
+    private static bool PathsMatch(string actualPath, string expectedPath)
+    {
+        return actualPath.TrimEnd('/').Equals(expectedPath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task AssertTextVisibleAsync(string text)

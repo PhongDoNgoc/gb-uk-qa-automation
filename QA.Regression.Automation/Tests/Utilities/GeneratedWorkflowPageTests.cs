@@ -7,6 +7,21 @@ namespace QA.Regression.Automation.Tests.Utilities;
 [TestFixture]
 public class GeneratedWorkflowPageTests
 {
+    [TestCase("/UnitDetails/UnitDetail", "Unit Details")]
+    [TestCase("/unitdetails/unitdetail/", "Unit Details")]
+    [TestCase("/CustomerDetails/CustomerDetail", "Customer Details")]
+    [TestCase("/customerDetails/customerdetail/", "Customer Details")]
+    public void GetNavigationItem_MapsApplicationRoutesToMenuItems(string path, string expectedMenuItem)
+    {
+        Assert.That(GeneratedWorkflowPage.GetNavigationItem(path), Is.EqualTo(expectedMenuItem));
+    }
+
+    [Test]
+    public void GetNavigationItem_ReturnsNullForUnmappedRoutes()
+    {
+        Assert.That(GeneratedWorkflowPage.GetNavigationItem("/Dashboard/Index"), Is.Null);
+    }
+
     [Test]
     public void BuildRequestUri_CombinesRootedApiPathWithPageOrigin()
     {
