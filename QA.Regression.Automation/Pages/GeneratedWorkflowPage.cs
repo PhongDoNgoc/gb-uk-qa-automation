@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.Playwright;
 using System.Net;
 using System.Net.Http;
@@ -51,7 +52,26 @@ public class GeneratedWorkflowPage
 
     public async Task ClickButtonAsync(string buttonText)
     {
-        var locators = new[]
+        var locators = new List<ILocator>();
+        if (buttonText.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            locators.Add(_page.Locator(
+                "button:has([class*='refresh' i]), button[class*='refresh' i], " +
+                "[role='button']:has([class*='refresh' i]), [role='button'][class*='refresh' i], " +
+                "a:has([class*='refresh' i]), a[class*='refresh' i], " +
+                "button:has([class*='sync' i]), button[class*='sync' i], " +
+                "[role='button']:has([class*='sync' i]), [role='button'][class*='sync' i], " +
+                "a:has([class*='sync' i]), a[class*='sync' i], " +
+                "button:has([class*='reload' i]), button[class*='reload' i], " +
+                "[role='button']:has([class*='reload' i]), [role='button'][class*='reload' i], " +
+                "a:has([class*='reload' i]), a[class*='reload' i], " +
+                "button:has([class*='rotate' i]), button[class*='rotate' i], " +
+                "[role='button']:has([class*='rotate' i]), [role='button'][class*='rotate' i], " +
+                "a:has([class*='rotate' i]), a[class*='rotate' i], " +
+                "button:has([data-icon*='refresh' i]), [role='button']:has([data-icon*='refresh' i])"));
+        }
+
+        locators.AddRange(new[]
         {
             _page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = buttonText, Exact = false }),
             _page.Locator(
@@ -60,7 +80,7 @@ public class GeneratedWorkflowPage
             _page.Locator(
                 $"[aria-label*='{buttonText}' i], [title*='{buttonText}' i], input[type='submit'][value*='{buttonText}' i], input[type='button'][value*='{buttonText}' i]"
             ),
-        };
+        });
 
         foreach (var locator in locators)
         {

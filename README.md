@@ -129,7 +129,7 @@ You can copy [.env.example](</C:/Users/lan.le/OneDrive - Endeco-Technologies/Des
 
 The manually triggered `QA.Regression.Automation/azure-pipelines.yml` routes `PROD` to the Microsoft-hosted `ubuntu-latest` agent, and routes `DEV` and `STAGE` to Linux self-hosted agent `gbvmdsmanagerdne01` in pool `SelfHostedAP-Dev-NE-Swarm`.
 
-Before building, CI fetches the current test cases and parameter rows from Plan `30985`, Suite `31681`, regenerates the C# scripts, and removes generated files for cases no longer in the suite. After a successful build, it updates the automation association fields on those existing Azure Test Cases, runs `dotnet test`, and publishes TRX results.
+Before building, CI fetches the current test cases and parameter rows from Plan `30985`, Suite `31681`, regenerates the C# scripts, and removes generated files for cases no longer in the suite. After a successful build, it updates the automation association fields on those existing Azure Test Cases, runs only generated tests from the selected suite, and publishes TRX results. Helper/unit tests in the same project are not included in the CI run.
 
 This updates the automation association on existing Test Case work items; it does not create new Test Case items or store C# source code in the Test Plans suite. The generated C# exists in the pipeline workspace for that run. This CI pipeline does not use the Azure Test Plans on-demand VSTest flow.
 

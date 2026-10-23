@@ -141,6 +141,7 @@ steps:
     arguments: >-
       --configuration $(buildConfiguration)
       --no-build
+      --filter "FullyQualifiedName~QA.Regression.Automation.Tests.Generated.Suite$(AZDO_SUITE_ID)"
       --logger "trx;LogFileName=regression.trx"
       --results-directory "$(Agent.TempDirectory)/TestResults"
     publishTestResults: false
