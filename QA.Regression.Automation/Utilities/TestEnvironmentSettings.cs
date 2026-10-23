@@ -33,12 +33,26 @@ public static class TestEnvironmentSettings
 
     public static string ResolveUrlForEnvironment(string relativeUrl)
     {
-        if (string.IsNullOrWhiteSpace(relativeUrl) || relativeUrl == "/")
+        if (string.IsNullOrWhiteSpace(relativeUrl))
         {
             return ResolveBaseUrlForEnvironment();
         }
 
-        if (Uri.TryCreate(relativeUrl, UriKind.Absolute, out _))
+        var normalizedUrl = relativeUrl.Trim();
+        if (normalizedUrl == "/")
+        {
+            return ResolveBaseUrlForEnvironment();
+        }
+
+        if (normalizedUrl.StartsWith("//", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Expected a relative URL path, but received a network-path reference: '{relativeUrl}'."
+            );
+        }
+
+        if (!normalizedUrl.StartsWith("/", StringComparison.Ordinal)
+            && Uri.TryCreate(normalizedUrl, UriKind.Absolute, out _))
         {
             throw new InvalidOperationException(
                 $"Expected a relative URL path, but received an absolute URL: '{relativeUrl}'."
@@ -47,9 +61,9 @@ public static class TestEnvironmentSettings
 
         var selectedEnvironment = ResolveEnvironmentName();
         var configuredBaseUri = ResolveConfiguredBaseUri(selectedEnvironment);
-        var normalizedRelativeUrl = relativeUrl.StartsWith("/", StringComparison.Ordinal)
-            ? relativeUrl
-            : $"/{relativeUrl}";
+        var normalizedRelativeUrl = normalizedUrl.StartsWith("/", StringComparison.Ordinal)
+            ? normalizedUrl
+            : $"/{normalizedUrl}";
 
         return new Uri(configuredBaseUri, normalizedRelativeUrl).ToString();
     }
