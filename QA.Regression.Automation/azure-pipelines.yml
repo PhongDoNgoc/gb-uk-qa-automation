@@ -26,7 +26,7 @@ jobs:
     pool:
       vmImage: ubuntu-latest
     steps:
-    - template: QA.Regression.Automation/templates/regression-steps.yml
+    - template: templates/regression-steps.yml
 - ${{ if ne(parameters.targetEnvironment, 'PROD') }}:
   - job: RunRegression
     displayName: Run Playwright regression tests
@@ -36,4 +36,4 @@ jobs:
       - Agent.OS -equals Linux
       - Agent.Name -equals gbvmdsmanagerdne01
     steps:
-    - template: QA.Regression.Automation/templates/regression-steps.yml
+    - template: templates/regression-steps.yml
