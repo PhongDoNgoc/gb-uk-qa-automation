@@ -75,6 +75,10 @@ SITE_DETAILS_STEPS_XML = """<steps id="0" last="4">
 </steps>"""
 
 SITE_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet><Table1><rootID>165</rootID></Table1></NewDataSet>"""
+ENVIRONMENT_SITE_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet>
+<Table1><Environment>DEV</Environment><rootID>301</rootID></Table1>
+<Table1><Environment>STAGE</Environment><rootID>415</rootID></Table1>
+</NewDataSet>"""
 
 CUSTOMER_DETAIL_EXPORT = """Plan ID: 30985
 Suite ID: 31681
@@ -273,6 +277,91 @@ class AutomationGeneratorTests(unittest.TestCase):
 
             self.assertIn('var apiPathFragment = "/CustomerDetails/SiteDetails?rootId=165";', content)
             self.assertEqual(result["generated"][0]["parameter_values"], {"rootID": "165"})
+
+    def test_generate_scripts_selects_api_parameter_values_by_environment(self):
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [
+                    {
+                        "id": "31863",
+                        "title": "Customer Details - Verify SiteDetails API in Customer Details page is working",
+                        "state": "Design",
+                        "steps": SITE_DETAILS_STEPS_XML,
+                        "local_data_source": ENVIRONMENT_SITE_DETAILS_LOCAL_DATA_SOURCE,
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+
+            result = generate_automation_scripts(
+                client=FakeClient(),
+                suite_file=None,
+                plan_id=30985,
+                suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_file = Path(result["generated"][0]["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertIn(
+                'TestEnvironmentSettings.ResolveEnvironmentSpecificValue(',
+                content,
+            )
+            self.assertIn(
+                '["DEV"] = "/CustomerDetails/SiteDetails?rootId=301",',
+                content,
+            )
+            self.assertIn(
+                '["STAGE"] = "/CustomerDetails/SiteDetails?rootId=415",',
+                content,
+            )
+            self.assertEqual(
+                result["generated"][0]["parameter_rows"],
+                [
+                    {"Environment": "DEV", "rootID": "301"},
+                    {"Environment": "STAGE", "rootID": "415"},
+                ],
+            )
+
+    def test_generate_scripts_rejects_multiple_parameter_rows_without_environment(self):
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [
+                    {
+                        "id": "31863",
+                        "title": "Customer Details - Verify SiteDetails API in Customer Details page is working",
+                        "state": "Design",
+                        "steps": SITE_DETAILS_STEPS_XML,
+                        "local_data_source": (
+                            "<NewDataSet>"
+                            "<Table1><rootID>301</rootID></Table1>"
+                            "<Table1><rootID>415</rootID></Table1>"
+                            "</NewDataSet>"
+                        ),
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+
+            with self.assertRaisesRegex(ValueError, "Environment"):
+                generate_automation_scripts(
+                    client=FakeClient(),
+                    suite_file=None,
+                    plan_id=30985,
+                    suite_id=31681,
+                    project_dir=str(project_dir),
+                    namespace="QA.Regression.Automation.Tests.Generated",
+                    overwrite=False,
+                )
 
     def test_generate_scripts_normalizes_embedded_absolute_request_url(self):
         with tempfile.TemporaryDirectory() as td:

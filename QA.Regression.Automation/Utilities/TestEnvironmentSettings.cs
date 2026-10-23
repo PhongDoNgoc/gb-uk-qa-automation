@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 
 namespace QA.Regression.Automation.Utilities;
@@ -29,6 +30,20 @@ public static class TestEnvironmentSettings
     {
         var selectedEnvironment = ResolveEnvironmentName();
         return ResolveConfiguredBaseUri(selectedEnvironment).ToString();
+    }
+
+    public static string ResolveEnvironmentSpecificValue(IReadOnlyDictionary<string, string> valuesByEnvironment)
+    {
+        var selectedEnvironment = ResolveEnvironmentName();
+        if (valuesByEnvironment.TryGetValue(selectedEnvironment, out var value)
+            && !string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException(
+            $"No test parameter values are configured for environment '{selectedEnvironment}'."
+        );
     }
 
     public static string ResolveUrlForEnvironment(string relativeUrl)

@@ -145,6 +145,19 @@ Configure these in Azure DevOps pipeline variables or a variable group. Mark use
 
 The Linux agent needs .NET 10, passwordless `sudo` for the pipeline to install Chromium's system dependencies, and network/VPN access to both target environments. The pipeline installs dependencies and Chromium through Playwright's .NET API, so PowerShell 7 is not required. If the agent account cannot use passwordless `sudo`, an administrator must preinstall the Linux dependencies.
 
+## Environment-specific Test Plans parameters
+
+For API tests with IDs that differ by environment, use parameter placeholders in the test step (for example, `rootId='@rootID'`) and a parameter table with separate `Environment` and ID columns. If needed, reference `@Environment` in a step to add that parameter column:
+
+| Environment | rootID |
+| --- | --- |
+| DEV | DEV_ROOT_ID |
+| STAGE | STAGE_ROOT_ID |
+
+Replace the example values with actual IDs. Add other ID columns, such as `SiteID`, `MarketUnitID`, or `ControlUnitID`, as needed. Keep the ID cells to the actual ID values; do not append labels such as `- dev` to an ID. The automation generator includes the rows in the generated test and selects the row matching the pipeline's `targetEnvironment` at runtime. The current CI pipeline supports `DEV` and `STAGE`.
+
+After changing parameter rows in Azure Test Plans, regenerate the automation scripts and commit the generated C# files. The CI pipeline runs the committed scripts; it does not regenerate them during each run.
+
 Optional later:
 
 - `VIEWPOINT_BASE_URL_UAT`

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using NUnit.Framework;
 using QA.Regression.Automation.Utilities;
 
@@ -39,5 +41,35 @@ public class TestEnvironmentSettingsTests
     {
         Assert.Throws<InvalidOperationException>(
             () => TestEnvironmentSettings.ResolveUrlForEnvironment(path));
+    }
+
+    [TestCase("DEV", "dev-id")]
+    [TestCase("STAGE", "stage-id")]
+    public void ResolveEnvironmentSpecificValue_UsesSelectedEnvironment(string environment, string expectedValue)
+    {
+        Environment.SetEnvironmentVariable("TEST_TARGET_ENV", environment);
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DEV"] = "dev-id",
+            ["STAGE"] = "stage-id",
+        };
+
+        Assert.That(
+            TestEnvironmentSettings.ResolveEnvironmentSpecificValue(values),
+            Is.EqualTo(expectedValue));
+    }
+
+    [Test]
+    public void ResolveEnvironmentSpecificValue_FailsWhenSelectedEnvironmentIsMissing()
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["STAGE"] = "stage-id",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => TestEnvironmentSettings.ResolveEnvironmentSpecificValue(values));
+
+        Assert.That(exception!.Message, Does.Contain("'DEV'"));
     }
 }

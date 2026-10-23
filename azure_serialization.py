@@ -41,13 +41,19 @@ def parse_existing_steps(steps_xml: str | None) -> list[dict[str, str]]:
 
 
 def parse_local_data_source(data_source_xml: str | None) -> dict[str, str]:
+    rows = parse_local_data_source_rows(data_source_xml)
+    return rows[0] if rows else {}
+
+
+def parse_local_data_source_rows(data_source_xml: str | None) -> list[dict[str, str]]:
     if not data_source_xml:
-        return {}
+        return []
     try:
         root = ET.fromstring(data_source_xml)
     except ET.ParseError:
-        return {}
+        return []
 
+    rows: list[dict[str, str]] = []
     for row_el in root:
         tag_name = row_el.tag.rsplit("}", 1)[-1]
         if tag_name == "schema":
@@ -60,9 +66,9 @@ def parse_local_data_source(data_source_xml: str | None) -> dict[str, str]:
             if field_name and field_value:
                 values[field_name] = field_value
         if values:
-            return values
+            rows.append(values)
 
-    return {}
+    return rows
 
 
 def assign_reqs_to_steps(existing_steps: list[dict[str, str]], requirements: list[dict[str, Any]]) -> list[list[str]]:
