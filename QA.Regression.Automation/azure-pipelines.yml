@@ -7,20 +7,99 @@ parameters:
   type: string
   default: DEV
   values:
-  - DEV
+  - PROD
   - STAGE
+  - DEV
 
 pool:
-  name: SelfHostedAP-Dev-NE-Swarm
-  demands:
-  - Agent.OS -equals Linux
-  - Agent.Name -equals gbvmdsmanagerdne01
+  ${{ if eq(parameters.targetEnvironment, 'PROD') }}:
+    vmImage: ubuntu-latest
+  ${{ else }}:
+    name: SelfHostedAP-Dev-NE-Swarm
+    demands:
+    - Agent.OS -equals Linux
+    - Agent.Name -equals gbvmdsmanagerdne01
 
 variables:
   buildConfiguration: Release
   TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
+  AZDO_ORG: endeco-technologies
+  AZDO_PROJECT: 'Development Team'
+  AZDO_PLAN_ID: '30985'
+  AZDO_SUITE_ID: '31681'
 
 steps:
+- task: Bash@3
+  displayName: Fetch latest Test Plans cases and generate automation
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      if [[ -z "${AZDO_PAT:-}" || "${AZDO_PAT:-}" == '$('* ]]; then
+        echo "Azure pipeline secret variable AZDO_PAT is required."
+        exit 1
+      fi
+      : "${AZDO_PLAN_ID:?Azure Test Plan ID is required}"
+      : "${AZDO_SUITE_ID:?Azure Test Suite ID is required}"
+
+      if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import venv" >/dev/null 2>&1; then
+        if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+          echo "Python 3 with venv support is required; passwordless sudo is unavailable to install it."
+          exit 1
+        fi
+        sudo -n apt-get update
+        sudo -n apt-get install -y python3 python3-venv
+      fi
+
+      python3 -m venv .venv
+      source .venv/bin/activate
+      python -m pip install --disable-pip-version-check -r requirements.txt
+      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization
+      python main.py generate-scripts \
+        --plan-id "$AZDO_PLAN_ID" \
+        --suite-id "$AZDO_SUITE_ID" \
+        --project-dir QA.Regression.Automation \
+        --overwrite
+  env:
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_PLAN_ID: $(AZDO_PLAN_ID)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+
+- task: Bash@3
+  displayName: Validate test settings
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      require_variable() {
+        local name="$1"
+        local value="${!name:-}"
+        if [[ -z "$value" || "$value" == '$('* ]]; then
+          echo "Pipeline variable ${name} is required."
+          exit 1
+        fi
+      }
+
+      require_variable VIEWPOINT_USERNAME
+      require_variable VIEWPOINT_PASSWORD
+      require_variable VIEWPOINT_INVALID_PASSWORD
+
+      url_variable="VIEWPOINT_BASE_URL_${TEST_TARGET_ENV}"
+      require_variable "$url_variable"
+
+      echo "Validated test settings for ${TEST_TARGET_ENV}."
+  env:
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
 - task: UseDotNet@2
   displayName: Install .NET 10 SDK
   inputs:
@@ -34,7 +113,7 @@ steps:
     projects: QA.Regression.Automation/QA.Regression.Automation.csproj
 
 - task: DotNetCoreCLI@2
-  displayName: Build test project
+  displayName: Build generated test project
   inputs:
     command: build
     projects: QA.Regression.Automation/QA.Regression.Automation.csproj
@@ -58,30 +137,20 @@ steps:
       dotnet "$installer_dll" install chromium
 
 - task: Bash@3
-  displayName: Validate test settings
+  displayName: Associate generated tests with Test Cases
   inputs:
     targetType: inline
     script: |
       set -euo pipefail
-      : "${VIEWPOINT_USERNAME:?Pipeline variable VIEWPOINT_USERNAME is required}"
-      : "${VIEWPOINT_PASSWORD:?Pipeline variable VIEWPOINT_PASSWORD is required}"
-      : "${VIEWPOINT_INVALID_PASSWORD:?Pipeline variable VIEWPOINT_INVALID_PASSWORD is required}"
-
-      url_variable="VIEWPOINT_BASE_URL_${TEST_TARGET_ENV}"
-      if [[ -z "${!url_variable:-}" ]]; then
-        echo "Pipeline variable ${url_variable} is required for ${TEST_TARGET_ENV}."
-        exit 1
-      fi
-
-      echo "Validated test settings for ${TEST_TARGET_ENV}."
+      source .venv/bin/activate
+      python main.py associate-scripts \
+        --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json" \
+        --overwrite-association
   env:
-    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
-    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
-    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
-    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
-    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
-    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
-    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
 
 - task: DotNetCoreCLI@2
   displayName: Run Playwright/NUnit tests
@@ -100,6 +169,7 @@ steps:
     VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
     VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
     VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
     VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
     VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
