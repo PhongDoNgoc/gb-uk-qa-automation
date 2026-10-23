@@ -673,7 +673,11 @@ def _extract_baseurl_reference(
     parameter_values: dict[str, str] | None = None,
     preserve_unresolved_parameters: bool = False,
 ) -> str:
-    match = re.search(rf"{re.escape(label)}\s*:\s*(baseurl/.+)$", value, re.I)
+    match = re.search(
+        rf"{re.escape(label)}(?:\s*@environment)?\s*:\s*(baseurl/.+)$",
+        value,
+        re.I,
+    )
     if not match:
         return ""
 
@@ -824,7 +828,7 @@ def _is_authenticated_api_status_case(test_case: SuiteTestCase) -> bool:
         and "logged in viewpoint portal" in all_text
         and "response status" in all_text
         and "status code should be" in all_text
-        and "request url:" in all_text
+        and re.search(r"\brequest\s+url(?:\s*@environment)?\s*:", all_text) is not None
     )
 
 

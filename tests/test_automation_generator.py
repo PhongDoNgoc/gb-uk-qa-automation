@@ -80,6 +80,54 @@ ENVIRONMENT_SITE_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet>
 <Table1><Environment>STAGE</Environment><rootID>415</rootID></Table1>
 </NewDataSet>"""
 
+SEGMENT_DETAILS_STEPS_XML = """<steps id="0" last="3">
+<step id="1" type="ActionStep">
+  <parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal</parameterizedString>
+  <parameterizedString isformatted="true"></parameterizedString>
+  <description />
+</step>
+<step id="2" type="ValidateStep">
+  <parameterizedString isformatted="true">Open Utilities sub-menu and click to Customer Details&lt;br&gt;URL: baseURL/CustomerDetails/CustomerDetail</parameterizedString>
+  <parameterizedString isformatted="true">User is navigated to Customer Details page</parameterizedString>
+  <description />
+</step>
+<step id="3" type="ValidateStep">
+  <parameterizedString isformatted="true">Verify the SegmentDetails API response status&lt;br&gt;Request URL @environment : baseURL/CustomerDetails/SegmentDetails?SiteId='@siteID' (valid siteID)</parameterizedString>
+  <parameterizedString isformatted="true">Status Code should be 200 OK</parameterizedString>
+  <description />
+</step>
+</steps>"""
+
+ENVIRONMENT_SEGMENT_DETAILS_LOCAL_DATA_SOURCE = """<NewDataSet>
+<Table1><environment>prod</environment><siteID>851</siteID></Table1>
+<Table1><environment>stage</environment><siteID>851</siteID></Table1>
+<Table1><environment>dev</environment><siteID>356</siteID></Table1>
+</NewDataSet>"""
+
+CONTROL_UNIT_STEPS_XML = """<steps id="0" last="3">
+<step id="1" type="ActionStep">
+  <parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal</parameterizedString>
+  <parameterizedString isformatted="true"></parameterizedString>
+  <description />
+</step>
+<step id="2" type="ValidateStep">
+  <parameterizedString isformatted="true">Open Utilities sub-menu and click to Unit Details&lt;br&gt;URL: baseURL/UnitDetails/UnitDetail</parameterizedString>
+  <parameterizedString isformatted="true">User is navigated to Unit Details page</parameterizedString>
+  <description />
+</step>
+<step id="3" type="ValidateStep">
+  <parameterizedString isformatted="true">Verify the GetControlUnit API response status&lt;br&gt;Request URL @environment : baseURL/UnitDetails/GetControlUnit?marketUnitId='@marketunitID' (valid marketunitID)</parameterizedString>
+  <parameterizedString isformatted="true">Status Code should be 200 OK</parameterizedString>
+  <description />
+</step>
+</steps>"""
+
+ENVIRONMENT_CONTROL_UNIT_LOCAL_DATA_SOURCE = """<NewDataSet>
+<Table1><environment>prod</environment><marketunitID>2</marketunitID></Table1>
+<Table1><environment>stage</environment><marketunitID>3</marketunitID></Table1>
+<Table1><environment>dev</environment><marketunitID>3008</marketunitID></Table1>
+</NewDataSet>"""
+
 CUSTOMER_DETAIL_EXPORT = """Plan ID: 30985
 Suite ID: 31681
 Test Cases: 1
@@ -353,6 +401,64 @@ class AutomationGeneratorTests(unittest.TestCase):
                     {"Environment": "DEV", "rootID": "301"},
                     {"Environment": "STAGE", "rootID": "415"},
                 ],
+            )
+
+    def test_generate_scripts_parses_environment_annotated_request_url(self):
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [
+                    {
+                        "id": "31864",
+                        "title": "Customer Details - Verify SegmentDetails API in Customer Details page is working",
+                        "state": "Design",
+                        "steps": SEGMENT_DETAILS_STEPS_XML,
+                        "local_data_source": ENVIRONMENT_SEGMENT_DETAILS_LOCAL_DATA_SOURCE,
+                    },
+                    {
+                        "id": "31868",
+                        "title": "Unit Details - Verify GetControlUnit API in Unit Details page is working",
+                        "state": "Design",
+                        "steps": CONTROL_UNIT_STEPS_XML,
+                        "local_data_source": ENVIRONMENT_CONTROL_UNIT_LOCAL_DATA_SOURCE,
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+
+            result = generate_automation_scripts(
+                client=FakeClient(),
+                suite_file=None,
+                plan_id=30985,
+                suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_by_id = {entry["test_case_id"]: entry for entry in result["generated"]}
+            self.assertEqual(set(generated_by_id), {31864, 31868})
+            for entry in generated_by_id.values():
+                self.assertEqual(entry["strategy"], "authenticated-api-status")
+                content = Path(entry["file_path"]).read_text(encoding="utf-8")
+                self.assertIn("GoToAndCaptureApiResponseStatusAsync", content)
+
+            segment_content = Path(generated_by_id[31864]["file_path"]).read_text(encoding="utf-8")
+            self.assertIn(
+                '["DEV"] = "/CustomerDetails/SegmentDetails?SiteId=356",',
+                segment_content,
+            )
+            self.assertIn(
+                '["STAGE"] = "/CustomerDetails/SegmentDetails?SiteId=851",',
+                segment_content,
+            )
+
+            control_unit_content = Path(generated_by_id[31868]["file_path"]).read_text(encoding="utf-8")
+            self.assertIn(
+                '["DEV"] = "/UnitDetails/GetControlUnit?marketUnitId=3008",',
+                control_unit_content,
             )
 
     def test_generate_scripts_rejects_multiple_parameter_rows_without_environment(self):

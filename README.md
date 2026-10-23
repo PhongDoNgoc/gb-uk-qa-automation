@@ -152,7 +152,7 @@ The Linux agents need Python 3 with `venv`, .NET 10, passwordless `sudo` for the
 
 ## Environment-specific Test Plans parameters
 
-For API tests with IDs that differ by environment, use parameter placeholders in the test step (for example, `rootId='@rootID'`) and a parameter table with separate `Environment` and ID columns. If needed, reference `@Environment` in a step to add that parameter column:
+For API tests with IDs that differ by environment, use parameter placeholders in the test step (for example, `rootId='@rootID'`) and a parameter table with separate `Environment` and ID columns. The generator supports request labels in the form `Request URL @environment : baseURL/...`; environment names and parameter column names are matched case-insensitively. If needed, reference `@Environment` in a step to add that parameter column:
 
 | Environment | rootID |
 | --- | --- |

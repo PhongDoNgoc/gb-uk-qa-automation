@@ -54,24 +54,71 @@ public class GeneratedWorkflowPage
 
     public async Task ClickButtonAsync(string buttonText)
     {
-        var locators = new List<ILocator>();
         if (buttonText.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
         {
-            locators.Add(_page.Locator(
-                "button:has([class*='refresh' i]), button[class*='refresh' i], " +
-                "[role='button']:has([class*='refresh' i]), [role='button'][class*='refresh' i], " +
-                "a:has([class*='refresh' i]), a[class*='refresh' i], " +
-                "button:has([class*='sync' i]), button[class*='sync' i], " +
-                "[role='button']:has([class*='sync' i]), [role='button'][class*='sync' i], " +
-                "a:has([class*='sync' i]), a[class*='sync' i], " +
-                "button:has([class*='reload' i]), button[class*='reload' i], " +
-                "[role='button']:has([class*='reload' i]), [role='button'][class*='reload' i], " +
-                "a:has([class*='reload' i]), a[class*='reload' i], " +
-                "button:has([class*='rotate' i]), button[class*='rotate' i], " +
-                "[role='button']:has([class*='rotate' i]), [role='button'][class*='rotate' i], " +
-                "a:has([class*='rotate' i]), a[class*='rotate' i], " +
-                "button:has([data-icon*='refresh' i]), [role='button']:has([data-icon*='refresh' i])"));
+            await _page.WaitForLoadStateAsync(
+                LoadState.Load,
+                new PageWaitForLoadStateOptions { Timeout = 60000 });
+
+            var refreshSelector = string.Join(", ", new[]
+            {
+                "button:has([class*='refresh' i])",
+                "button[class*='refresh' i]",
+                "[role='button']:has([class*='refresh' i])",
+                "[role='button'][class*='refresh' i]",
+                "a:has([class*='refresh' i])",
+                "a[class*='refresh' i]",
+                "button:has([class*='sync' i])",
+                "button[class*='sync' i]",
+                "[role='button']:has([class*='sync' i])",
+                "[role='button'][class*='sync' i]",
+                "a:has([class*='sync' i])",
+                "a[class*='sync' i]",
+                "button:has([class*='reload' i])",
+                "button[class*='reload' i]",
+                "[role='button']:has([class*='reload' i])",
+                "[role='button'][class*='reload' i]",
+                "a:has([class*='reload' i])",
+                "a[class*='reload' i]",
+                "button:has([class*='rotate' i])",
+                "button[class*='rotate' i]",
+                "[role='button']:has([class*='rotate' i])",
+                "[role='button'][class*='rotate' i]",
+                "a:has([class*='rotate' i])",
+                "a[class*='rotate' i]",
+                "button:has([data-icon*='refresh' i])",
+                "[role='button']:has([data-icon*='refresh' i])",
+                "button:has-text('Refresh')",
+                "input[type='submit'][value*='Refresh' i]",
+                "input[type='button'][value*='Refresh' i]",
+                "[role='button']:has-text('Refresh')",
+                "a:has-text('Refresh')",
+                "[aria-label*='Refresh' i]",
+                "[title*='Refresh' i]",
+            });
+            var refreshControl = _page.Locator(refreshSelector).First;
+
+            try
+            {
+                await refreshControl.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 60000,
+                });
+            }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException(
+                    $"Timeout 60000ms exceeded while waiting for a visible Refresh control on page '{_page.Url}'."
+                );
+            }
+
+            await refreshControl.ScrollIntoViewIfNeededAsync();
+            await refreshControl.ClickAsync(new LocatorClickOptions { Timeout = 60000 });
+            return;
         }
+
+        var locators = new List<ILocator>();
 
         locators.AddRange(new[]
         {
