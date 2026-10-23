@@ -184,6 +184,8 @@ For generated API status checks, the screenshot also includes an on-page evidenc
 - the returned HTTP status code (for example `200`)
 - a preview of the API response body
 
+Each API status check also attaches a dedicated full-page `API response evidence` screenshot immediately after rendering the panel, so the evidence remains available even if the application later updates its page.
+
 ## Validation
 
 Run the focused Python tests:

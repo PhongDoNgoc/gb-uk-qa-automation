@@ -3,6 +3,7 @@ using Microsoft.Playwright;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using NUnit.Framework;
 
 namespace QA.Regression.Automation.Pages;
 
@@ -36,6 +37,7 @@ public class GeneratedWorkflowPage
         var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
         var capture = await FetchApiResponseWithBrowserCookiesAsync(pageUrl, normalizedApiPath);
         await RenderApiEvidencePanelAsync(capture);
+        await AttachApiEvidenceScreenshotAsync();
         return capture.StatusCode;
     }
 
@@ -101,7 +103,7 @@ public class GeneratedWorkflowPage
         }
 
         throw new TimeoutException(
-            $"Timeout 30000ms exceeded while waiting for a clickable control matching '{buttonText}'."
+            $"Timeout 30000ms exceeded while waiting for a clickable control matching '{buttonText}' on page '{_page.Url}'."
         );
     }
 
@@ -286,6 +288,20 @@ public class GeneratedWorkflowPage
                 responsePreview = responsePreview,
             }
         );
+    }
+
+    private async Task AttachApiEvidenceScreenshotAsync()
+    {
+        var artifactDir = Path.Combine(TestContext.CurrentContext.WorkDirectory, "TestResults");
+        Directory.CreateDirectory(artifactDir);
+
+        var screenshotPath = Path.Combine(artifactDir, $"ApiEvidence-{Guid.NewGuid():N}.png");
+        await _page.ScreenshotAsync(new PageScreenshotOptions
+        {
+            Path = screenshotPath,
+            FullPage = true,
+        });
+        TestContext.AddTestAttachment(screenshotPath, "API response evidence");
     }
 
     private static string BuildResponsePreview(string responseBody)
