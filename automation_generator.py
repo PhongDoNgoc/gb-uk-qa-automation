@@ -600,11 +600,7 @@ def _extract_environment_specific_api_paths(
         if environment in paths_by_environment:
             raise ValueError(f"Duplicate '{environment}' environment row in test case parameter data.")
 
-        values = {
-            name: value
-            for name, value in row.items()
-            if name.casefold() != "environment"
-        }
+        values = dict(row)
         available_names = {name.casefold() for name in values}
         missing_names = sorted(placeholders - available_names)
         if missing_names:

@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from automation_generator import generate_automation_scripts, parse_suite_export_text
+from automation_generator import (
+    _extract_environment_specific_api_paths,
+    generate_automation_scripts,
+    parse_suite_export_text,
+)
 
 
 SUITE_EXPORT = """Plan ID: 30985
@@ -460,6 +464,24 @@ class AutomationGeneratorTests(unittest.TestCase):
                 '["DEV"] = "/UnitDetails/GetControlUnit?marketUnitId=3008",',
                 control_unit_content,
             )
+
+    def test_environment_parameter_can_also_be_used_in_api_url(self):
+        paths = _extract_environment_specific_api_paths(
+            "Verify API response status Request URL: "
+            "baseURL/UnitDetails/GetControlUnit?environment='@environment'&marketUnitId='@marketunitID'",
+            [
+                {"environment": "prod", "marketunitID": "2"},
+                {"environment": "dev", "marketunitID": "3008"},
+            ],
+        )
+
+        self.assertEqual(
+            paths,
+            {
+                "PROD": "/UnitDetails/GetControlUnit?environment=prod&marketUnitId=2",
+                "DEV": "/UnitDetails/GetControlUnit?environment=dev&marketUnitId=3008",
+            },
+        )
 
     def test_generate_scripts_rejects_multiple_parameter_rows_without_environment(self):
         class FakeClient:
