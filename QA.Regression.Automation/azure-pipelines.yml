@@ -41,7 +41,7 @@ steps:
     arguments: '--configuration $(buildConfiguration) --no-restore'
 
 - task: Bash@3
-  displayName: Install Playwright Chromium
+  displayName: Install Playwright dependencies and Chromium
   inputs:
     targetType: inline
     script: |
@@ -49,6 +49,12 @@ steps:
       installer_project="tools/PlaywrightBrowserInstaller/PlaywrightBrowserInstaller.csproj"
       installer_dll="tools/PlaywrightBrowserInstaller/bin/$(buildConfiguration)/net10.0/PlaywrightBrowserInstaller.dll"
       dotnet build "$installer_project" --configuration "$(buildConfiguration)" --property:UseAppHost=false
+      dotnet_path="$(command -v dotnet)"
+      if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+        echo "Passwordless sudo is required to install Chromium's Linux system dependencies."
+        exit 1
+      fi
+      sudo -n "$dotnet_path" "$installer_dll" install-deps chromium
       dotnet "$installer_dll" install chromium
 
 - task: Bash@3
