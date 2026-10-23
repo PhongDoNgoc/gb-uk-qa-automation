@@ -143,7 +143,7 @@ Create these Azure Pipeline variables before running:
 
 Configure these in Azure DevOps pipeline variables or a variable group. Mark usernames/passwords as secret as appropriate. Set the DEV and STAGE URLs to the actual environment base URLs. The pipeline validates the selected environment's URL and credentials before running tests.
 
-The Linux agent needs .NET 10, network/VPN access to both target environments, and the Linux dependencies required by Playwright Chromium.
+The Linux agent needs .NET 10, PowerShell 7 (`pwsh`), network/VPN access to both target environments, and the Linux dependencies required by Playwright Chromium.
 
 Optional later:
 

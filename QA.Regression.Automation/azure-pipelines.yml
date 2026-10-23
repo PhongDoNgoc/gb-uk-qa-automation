@@ -46,7 +46,16 @@ steps:
     targetType: inline
     script: |
       set -euo pipefail
-      bash QA.Regression.Automation/bin/$(buildConfiguration)/net10.0/playwright.sh install chromium
+      playwright_script="QA.Regression.Automation/bin/$(buildConfiguration)/net10.0/playwright.ps1"
+      if ! command -v pwsh >/dev/null 2>&1; then
+        echo "PowerShell 7 (pwsh) is required to install Playwright browsers on this Linux agent."
+        exit 1
+      fi
+      if [[ ! -f "$playwright_script" ]]; then
+        echo "Playwright install script not found: $playwright_script"
+        exit 1
+      fi
+      pwsh "$playwright_script" install chromium
 
 - task: Bash@3
   displayName: Validate test settings
