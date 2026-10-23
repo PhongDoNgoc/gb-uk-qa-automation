@@ -146,19 +146,47 @@ public class GeneratedWorkflowPage
         );
     }
 
-    private static Uri BuildRequestUri(string pageUrl, string apiPathFragment)
+    internal static Uri BuildRequestUri(string pageUrl, string apiPathFragment)
     {
-        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var baseUri))
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var baseUri)
+            || !IsHttpUri(baseUri))
         {
-            throw new InvalidOperationException($"Page URL '{pageUrl}' is not a valid absolute URI.");
+            throw new InvalidOperationException(
+                $"Page URL '{pageUrl}' is not a valid absolute HTTP or HTTPS URI.");
         }
 
-        if (Uri.TryCreate(apiPathFragment, UriKind.Absolute, out var absoluteUri))
+        var normalizedApiPath = apiPathFragment.Trim();
+        if (normalizedApiPath.StartsWith("//", StringComparison.Ordinal))
         {
+            throw new InvalidOperationException(
+                $"API path '{apiPathFragment}' must not be a network-path reference.");
+        }
+
+        if (normalizedApiPath.StartsWith("/", StringComparison.Ordinal))
+        {
+            return new Uri(baseUri, normalizedApiPath);
+        }
+
+        if (Uri.TryCreate(normalizedApiPath, UriKind.Absolute, out var absoluteUri))
+        {
+            if (!IsHttpUri(absoluteUri))
+            {
+                throw new InvalidOperationException(
+                    $"API URL '{apiPathFragment}' must use HTTP or HTTPS.");
+            }
+
             return absoluteUri;
         }
 
-        return new Uri(baseUri, apiPathFragment);
+        return new Uri(baseUri, normalizedApiPath);
+    }
+
+    private static bool IsHttpUri(Uri uri)
+    {
+        return uri.IsAbsoluteUri
+            && !string.IsNullOrWhiteSpace(uri.Host)
+            && (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task RenderApiEvidencePanelAsync(ApiResponseCapture capture)
