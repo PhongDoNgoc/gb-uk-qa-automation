@@ -13,3 +13,5 @@ QA.Regression.Automation/bin/
 QA.Regression.Automation/obj/
 QA.Regression.Automation/TestResults/
 QA.Regression.Automation/Tests/Generated/**/automation-manifest.json
+tools/PlaywrightBrowserInstaller/bin/
+tools/PlaywrightBrowserInstaller/obj/
