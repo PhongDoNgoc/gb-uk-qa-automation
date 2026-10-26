@@ -137,11 +137,6 @@ public class GeneratedWorkflowPage
             return "Unit Details";
         }
 
-        if (normalizedPath.Equals("/CustomerDetails/CustomerDetail", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Customer Details";
-        }
-
         return null;
     }
 

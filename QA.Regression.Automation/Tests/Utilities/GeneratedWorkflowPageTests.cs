@@ -9,17 +9,18 @@ public class GeneratedWorkflowPageTests
 {
     [TestCase("/UnitDetails/UnitDetail", "Unit Details")]
     [TestCase("/unitdetails/unitdetail/", "Unit Details")]
-    [TestCase("/CustomerDetails/CustomerDetail", "Customer Details")]
-    [TestCase("/customerDetails/customerdetail/", "Customer Details")]
     public void GetNavigationItem_MapsApplicationRoutesToMenuItems(string path, string expectedMenuItem)
     {
         Assert.That(GeneratedWorkflowPage.GetNavigationItem(path), Is.EqualTo(expectedMenuItem));
     }
 
     [Test]
-    public void GetNavigationItem_ReturnsNullForUnmappedRoutes()
+    [TestCase("/CustomerDetails/CustomerDetail")]
+    [TestCase("/customerDetails/customerdetail/")]
+    [TestCase("/Dashboard/Index")]
+    public void GetNavigationItem_ReturnsNullForRoutesThatUseDirectNavigation(string path)
     {
-        Assert.That(GeneratedWorkflowPage.GetNavigationItem("/Dashboard/Index"), Is.Null);
+        Assert.That(GeneratedWorkflowPage.GetNavigationItem(path), Is.Null);
     }
 
     [Test]
