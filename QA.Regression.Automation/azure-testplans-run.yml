@@ -64,12 +64,22 @@ jobs:
         projects: QA.Regression.Automation/QA.Regression.Automation.csproj
         arguments: --configuration $(buildConfiguration) --no-restore
 
-    - task: PowerShell@2
-      displayName: Install Playwright browsers
+    - task: Bash@3
+      displayName: Install Playwright dependencies and Chromium
       inputs:
         targetType: inline
         script: |
-          & ./QA.Regression.Automation/bin/$(buildConfiguration)/net10.0/playwright.ps1 install
+          set -euo pipefail
+          installer_project="tools/PlaywrightBrowserInstaller/PlaywrightBrowserInstaller.csproj"
+          installer_dll="tools/PlaywrightBrowserInstaller/bin/$(buildConfiguration)/net10.0/PlaywrightBrowserInstaller.dll"
+          dotnet build "$installer_project" --configuration "$(buildConfiguration)" --property:UseAppHost=false
+          dotnet_path="$(command -v dotnet)"
+          if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+            echo "Passwordless sudo is required to install Chromium's Linux system dependencies."
+            exit 1
+          fi
+          sudo -n "$dotnet_path" "$installer_dll" install-deps chromium
+          dotnet "$installer_dll" install chromium
 
     - task: VisualStudioTestPlatformInstaller@1
       displayName: Install Visual Studio Test Platform
@@ -77,32 +87,34 @@ jobs:
         packageFeedSelector: nugetOrg
         versionSelector: latestStable
 
-    - task: PowerShell@2
+    - task: Bash@3
       displayName: Validate required test environment variables
       inputs:
         targetType: inline
         script: |
-          $required = @(
-            'VIEWPOINT_USERNAME',
-            'VIEWPOINT_PASSWORD',
-            'VIEWPOINT_INVALID_PASSWORD'
-          )
+          set -euo pipefail
+          selected_environment="$(printf '%s' "${TEST_TARGET_ENV:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
+          if [[ -z "$selected_environment" ]]; then
+            selected_environment=PROD
+          fi
 
-          $selectedEnvironment = if ([string]::IsNullOrWhiteSpace($env:TEST_TARGET_ENV)) { 'PROD' } else { $env:TEST_TARGET_ENV.Trim().ToUpperInvariant() }
-          $required += "VIEWPOINT_BASE_URL_$selectedEnvironment"
+          required=(VIEWPOINT_USERNAME VIEWPOINT_PASSWORD VIEWPOINT_INVALID_PASSWORD "VIEWPOINT_BASE_URL_${selected_environment}")
+          missing=()
+          for name in "${required[@]}"; do
+            value="${!name:-}"
+            if [[ -z "$(printf '%s' "$value" | tr -d '[:space:]')" ]]; then
+              missing+=("$name")
+            fi
+          done
 
-          $missing = @()
-          foreach ($name in $required) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              $missing += $name
-            }
-          }
+          if (( ${#missing[@]} > 0 )); then
+            missing_list="$(printf '%s, ' "${missing[@]}")"
+            missing_list="${missing_list%, }"
+            printf 'Missing required environment variable(s) for test execution: %s\n' "$missing_list" >&2
+            exit 1
+          fi
 
-          if ($missing.Count -gt 0) {
-            throw "Missing required environment variable(s) for test execution: $($missing -join ', ')"
-          }
-
-          Write-Host "Validated required environment variables for TEST_TARGET_ENV=$selectedEnvironment."
+          printf 'Validated required environment variables for TEST_TARGET_ENV=%s.\n' "$selected_environment"
       env:
         TEST_TARGET_ENV: $(TEST_TARGET_ENV)
         VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
