@@ -184,7 +184,7 @@ For generated API status checks, the screenshot also includes an on-page evidenc
 - the returned HTTP status code (for example `200`)
 - a preview of the API response body
 
-Each API status check also attaches a dedicated full-page `API response evidence` screenshot immediately after rendering the panel, so the evidence remains available even if the application later updates its page. Customer Details uses direct URL navigation. Unit Details is opened through the Utilities navigation and is not considered ready until its heading, Export to Excel control, Refresh control, and at least one grid row are visible; API evidence and Refresh actions wait for that UI readiness check.
+Each API status check also attaches a dedicated full-page `API response evidence` screenshot immediately after rendering the panel, so the evidence remains available even if the application later updates its page. Customer Details uses direct URL navigation and evidence capture waits for both the Energy Services and Customer Details sections and at least two populated tables to be visible. Unit Details is opened through the Utilities navigation, falling back to its direct URL if the menu link is unavailable. It is not considered ready until its heading, Export to Excel control, Refresh control, and at least one grid row are visible; API evidence and Refresh actions wait for that UI readiness check.
 
 ## Validation
 

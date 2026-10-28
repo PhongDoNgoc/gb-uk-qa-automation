@@ -23,6 +23,17 @@ public class GeneratedWorkflowPageTests
         Assert.That(GeneratedWorkflowPage.GetNavigationItem(path), Is.Null);
     }
 
+    [TestCase("/CustomerDetails/CustomerDetail", true)]
+    [TestCase("/customerdetails/customerdetail/", true)]
+    [TestCase("/UnitDetails/UnitDetail", false)]
+    [TestCase("/Dashboard/Index", false)]
+    public void IsCustomerDetailsPath_IdentifiesCustomerDetailsRoutes(
+        string path,
+        bool expected)
+    {
+        Assert.That(GeneratedWorkflowPage.IsCustomerDetailsPath(path), Is.EqualTo(expected));
+    }
+
     [Test]
     public void BuildRequestUri_CombinesRootedApiPathWithPageOrigin()
     {

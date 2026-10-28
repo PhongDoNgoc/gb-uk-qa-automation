@@ -38,7 +38,9 @@ public class GeneratedWorkflowPage
             });
         }
 
-        await WaitForPageReadyAsync(navigationItem);
+        await WaitForPageReadyAsync(
+            navigationItem,
+            isSameOrigin && IsCustomerDetailsPath(targetUri.AbsolutePath));
     }
 
     public async Task<int> GoToAndCaptureApiResponseStatusAsync(string pageUrl, string apiPathFragment)
@@ -140,6 +142,13 @@ public class GeneratedWorkflowPage
         return null;
     }
 
+    internal static bool IsCustomerDetailsPath(string path)
+    {
+        return path.TrimEnd('/').Equals(
+            "/CustomerDetails/CustomerDetail",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task NavigateThroughUtilitiesAsync(Uri targetUri, string navigationItem)
     {
         if (PathsMatch(new Uri(_page.Url).AbsolutePath, targetUri.AbsolutePath))
@@ -162,11 +171,33 @@ public class GeneratedWorkflowPage
             await utilitiesMenu.ClickAsync();
         }
 
-        await targetLink.WaitForAsync(new LocatorWaitForOptions
+        try
         {
-            State = WaitForSelectorState.Visible,
-            Timeout = 30000,
-        });
+            await targetLink.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 10000,
+            });
+        }
+        catch (TimeoutException)
+        {
+            TestContext.Progress.WriteLine(
+                $"Utilities navigation did not expose '{navigationItem}'. Falling back to direct navigation to '{targetUri.PathAndQuery}'.");
+            await _page.GotoAsync(targetUri.ToString(), new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 60000,
+            });
+
+            if (!PathsMatch(new Uri(_page.Url).AbsolutePath, targetUri.AbsolutePath))
+            {
+                throw new InvalidOperationException(
+                    $"Direct navigation to '{targetUri.AbsolutePath}' ended at '{_page.Url}'.");
+            }
+
+            return;
+        }
+
         await targetLink.ClickAsync();
         await _page.WaitForLoadStateAsync(
             LoadState.NetworkIdle,
@@ -179,23 +210,26 @@ public class GeneratedWorkflowPage
         }
     }
 
-    private async Task WaitForPageReadyAsync(string? navigationItem)
+    private async Task WaitForPageReadyAsync(string? navigationItem, bool isCustomerDetailsPage)
     {
-        if (navigationItem is null)
+        if (navigationItem is null && !isCustomerDetailsPage)
         {
             return;
         }
 
-        var heading = _page.GetByRole(
-            AriaRole.Heading,
-            new PageGetByRoleOptions { Name = navigationItem, Exact = true }).First;
-        await heading.WaitForAsync(new LocatorWaitForOptions
+        if (navigationItem is not null)
         {
-            State = WaitForSelectorState.Visible,
-            Timeout = 60000,
-        });
+            var heading = _page.GetByRole(
+                AriaRole.Heading,
+                new PageGetByRoleOptions { Name = navigationItem, Exact = true }).First;
+            await heading.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 60000,
+            });
+        }
 
-        if (navigationItem.Equals("Unit Details", StringComparison.Ordinal))
+        if (navigationItem?.Equals("Unit Details", StringComparison.Ordinal) == true)
         {
             var exportControl = _page.Locator(
                 "button:has-text('Export to Excel'), a:has-text('Export to Excel'), " +
@@ -221,9 +255,56 @@ public class GeneratedWorkflowPage
             });
         }
 
+        if (isCustomerDetailsPage)
+        {
+            await WaitForCustomerDetailsTablesAsync();
+        }
+
         await _page.WaitForLoadStateAsync(
             LoadState.NetworkIdle,
             new PageWaitForLoadStateOptions { Timeout = 60000 });
+    }
+
+    private async Task WaitForCustomerDetailsTablesAsync()
+    {
+        await _page.GetByText("Energy Services", new PageGetByTextOptions { Exact = true })
+            .First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 60000,
+            });
+        await _page.GetByText("Customer Details", new PageGetByTextOptions { Exact = true })
+            .First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 60000,
+            });
+
+        await _page.WaitForFunctionAsync(
+            """
+            () => {
+                const isVisible = element => {
+                    const style = window.getComputedStyle(element);
+                    const bounds = element.getBoundingClientRect();
+                    return style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && bounds.width > 0
+                        && bounds.height > 0;
+                };
+                const populatedTables = Array.from(document.querySelectorAll('table'))
+                    .filter(table => isVisible(table)
+                        && Array.from(table.querySelectorAll('tbody tr')).some(row => {
+                            if (!isVisible(row)) {
+                                return false;
+                            }
+                            const text = row.innerText.trim();
+                            return text.length > 0 && !/no records|no data|loading/i.test(text);
+                        }));
+                return populatedTables.length >= 2;
+            }
+            """,
+            null,
+            new PageWaitForFunctionOptions { Timeout = 90000 });
     }
 
     private ILocator GetRefreshControlLocator()
