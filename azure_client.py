@@ -71,7 +71,7 @@ class AzureDevOpsClient:
         if response.status_code >= 400:
             raise AzureDevOpsError(f"HTTP {response.status_code} error", status_code=response.status_code)
 
-        data = response.json()
+        data = self._response_json(response, "GET", path)
         if not isinstance(data, dict):
             raise AzureDevOpsError("Unexpected response format")
         return data
@@ -109,10 +109,22 @@ class AzureDevOpsClient:
         if response.status_code >= 400:
             raise AzureDevOpsError(f"HTTP {response.status_code} error", status_code=response.status_code)
 
-        data = response.json()
+        data = self._response_json(response, "GET", path)
         if not isinstance(data, dict):
             raise AzureDevOpsError("Unexpected response format")
         return data, response.headers
+
+    @staticmethod
+    def _response_json(response: Any, method: str, path: str) -> Any:
+        try:
+            return response.json()
+        except ValueError:
+            content_type = response.headers.get("Content-Type", "unknown")
+            raise AzureDevOpsError(
+                f"Non-JSON response for Azure DevOps {method} {path} "
+                f"(HTTP {response.status_code}, content type {content_type}).",
+                status_code=response.status_code,
+            ) from None
 
     @staticmethod
     def _assigned_to_text(value: Any) -> str:
@@ -1071,10 +1083,7 @@ class AzureDevOpsClient:
 
         if not response.content:
             return None
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise AzureDevOpsError(f"Unexpected response format: {exc}") from None
+        return self._response_json(response, method, path)
 
     def create_test_case_work_item(
         self,

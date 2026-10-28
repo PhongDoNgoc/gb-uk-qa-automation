@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import CompletedProcess
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from azure_client import AzureDevOpsError
+from azure_client import AzureConfig, AzureDevOpsClient, AzureDevOpsError
 from test_plan_runner import TestAttachment, TestExecution, _read_trx, execute_test_case, run_test_plan
 
 
@@ -250,6 +250,23 @@ class TestPlanRunnerTests(unittest.TestCase):
         filter_index = command.index("--filter")
         self.assertEqual(command[filter_index + 1], f"FullyQualifiedName={fully_qualified_name}")
         self.assertEqual(execution.outcome, "Passed")
+
+
+class AzureClientResponseTests(unittest.TestCase):
+    @patch("azure_client.requests.get")
+    def test_reports_route_and_content_type_for_non_json_responses(self, get):
+        response = Mock()
+        response.status_code = 200
+        response.headers = {"Content-Type": "text/html"}
+        response.json.side_effect = ValueError("invalid JSON")
+        get.return_value = response
+        client = AzureDevOpsClient(AzureConfig(org="example", project="project", pat="token"))
+
+        with self.assertRaisesRegex(
+            AzureDevOpsError,
+            r"GET /_apis/test/Plans/1/suites/2/points \(HTTP 200, content type text/html\)",
+        ):
+            client._get("/_apis/test/Plans/1/suites/2/points")
 
 
 if __name__ == "__main__":
