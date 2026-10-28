@@ -127,7 +127,10 @@ jobs:
         targetType: inline
         script: |
           set -euo pipefail
-          : "${AZDO_PAT:?Azure pipeline secret variable AZDO_PAT is required.}"
+          if [[ -z "${AZDO_PAT:-}" || "${AZDO_PAT:-}" == '$('* ]]; then
+            echo "Azure pipeline secret variable AZDO_PAT is required for Test Plans API access."
+            exit 1
+          fi
           : "${AZDO_PLAN_ID:?Azure Test Plan ID is required.}"
           : "${AZDO_SUITE_ID:?Azure Test Suite ID is required.}"
           : "${AZDO_CONFIGURATION_ID:?Azure Test Configuration ID is required.}"
