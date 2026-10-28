@@ -24,6 +24,8 @@ Use this skill when any of the following is true:
 - Test Plans pipeline YAML: `QA.Regression.Automation/azure-testplans-run.yml`
 - Target environment parameter: `targetEnvironment`
 - Agent routing parameters: `agentPoolMode`, `selfHostedPoolName`
+- For `DEV` and `STAGE`, `Auto` uses the CI self-hosted Linux agent: pool `SelfHostedAP-Dev-NE-Swarm`, agent `gbvmdsmanagerdne01`.
+- The Test Plans pipeline must be authorized to use that pool in Azure DevOps.
 - Base URL variables follow: `VIEWPOINT_BASE_URL_<ENVIRONMENT>`
 - The checked-in pipeline YAML files do not hardcode a PROD base URL, so Azure DevOps variables must provide `VIEWPOINT_BASE_URL_PROD` and any other environment URLs you use.
 
@@ -79,7 +81,7 @@ Use these values:
 - `testConfiguration = the configuration assigned to that suite`
 - `targetEnvironment = PROD`, `DEV`, `STAGE`, or another configured environment name
 - `agentPoolMode = Auto`, `Hosted`, or `SelfHosted`
-- `selfHostedPoolName = your internal pool name` when needed
+- `selfHostedPoolName = SelfHostedAP-Dev-NE-Swarm` for the CI-matching DEV/STAGE self-hosted agent
 
 Expected result:
 
@@ -157,6 +159,6 @@ Example: the generated test is already passing locally and has been pushed for p
    - `testConfiguration = 222`
    - `targetEnvironment = STAGE`
    - `agentPoolMode = Auto`
-   - `selfHostedPoolName = Default`
+   - `selfHostedPoolName = SelfHostedAP-Dev-NE-Swarm`
 
 4. Review the suite result in Azure Test Plans.

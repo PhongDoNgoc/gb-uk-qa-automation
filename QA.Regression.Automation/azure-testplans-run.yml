@@ -29,7 +29,7 @@ parameters:
 - name: selfHostedPoolName
   displayName: Self-hosted pool name
   type: string
-  default: Default
+  default: SelfHostedAP-Dev-NE-Swarm
 
 variables:
   buildConfiguration: Release
@@ -41,6 +41,9 @@ jobs:
     displayName: Run Azure Test Plan on self-hosted agent
     pool:
       name: ${{ parameters.selfHostedPoolName }}
+      demands:
+      - Agent.OS -equals Linux
+      - Agent.Name -equals gbvmdsmanagerdne01
     steps:
     - task: UseDotNet@2
       displayName: Use .NET 10 SDK
