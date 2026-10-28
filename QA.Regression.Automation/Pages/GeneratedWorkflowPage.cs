@@ -157,8 +157,9 @@ public class GeneratedWorkflowPage
         }
 
         var targetLink = _page.GetByRole(
-            AriaRole.Link,
-            new PageGetByRoleOptions { Name = navigationItem, Exact = true });
+                AriaRole.Link,
+                new PageGetByRoleOptions { Name = navigationItem, Exact = true })
+            .Filter(new LocatorFilterOptions { Visible = true });
 
         if (!await targetLink.IsVisibleAsync())
         {
@@ -220,8 +221,10 @@ public class GeneratedWorkflowPage
         if (navigationItem is not null)
         {
             var heading = _page.GetByRole(
-                AriaRole.Heading,
-                new PageGetByRoleOptions { Name = navigationItem, Exact = true }).First;
+                    AriaRole.Heading,
+                    new PageGetByRoleOptions { Name = navigationItem, Exact = true })
+                .Filter(new LocatorFilterOptions { Visible = true })
+                .First;
             await heading.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
@@ -232,8 +235,9 @@ public class GeneratedWorkflowPage
         if (navigationItem?.Equals("Unit Details", StringComparison.Ordinal) == true)
         {
             var exportControl = _page.Locator(
-                "button:has-text('Export to Excel'), a:has-text('Export to Excel'), " +
-                "[role='button']:has-text('Export to Excel')");
+                    "button:has-text('Export to Excel'), a:has-text('Export to Excel'), " +
+                    "[role='button']:has-text('Export to Excel')")
+                .Filter(new LocatorFilterOptions { Visible = true });
             await exportControl.First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
@@ -247,7 +251,8 @@ public class GeneratedWorkflowPage
             });
 
             var gridRow = _page.Locator(
-                "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr");
+                    "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr")
+                .Filter(new LocatorFilterOptions { Visible = true });
             await gridRow.First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
@@ -268,12 +273,14 @@ public class GeneratedWorkflowPage
     private async Task WaitForCustomerDetailsTablesAsync()
     {
         await _page.GetByText("Energy Services", new PageGetByTextOptions { Exact = true })
+            .Filter(new LocatorFilterOptions { Visible = true })
             .First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
                 Timeout = 60000,
             });
         await _page.GetByText("Customer Details", new PageGetByTextOptions { Exact = true })
+            .Filter(new LocatorFilterOptions { Visible = true })
             .First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
@@ -346,7 +353,9 @@ public class GeneratedWorkflowPage
             "[title*='Refresh' i]",
             "[data-original-title*='refresh' i]",
         });
-        return _page.Locator(refreshSelector).First;
+        return _page.Locator(refreshSelector)
+            .Filter(new LocatorFilterOptions { Visible = true })
+            .First;
     }
 
     private static bool PathsMatch(string actualPath, string expectedPath)
