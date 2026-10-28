@@ -26,6 +26,9 @@ Use this skill when any of the following is true:
 - Agent routing parameters: `agentPoolMode`, `selfHostedPoolName`
 - For `DEV` and `STAGE`, `Auto` uses the CI self-hosted Linux agent: pool `SelfHostedAP-Dev-NE-Swarm`, agent `gbvmdsmanagerdne01`.
 - The Test Plans pipeline must be authorized to use that pool in Azure DevOps.
+- The Linux job selects test points by plan, suite, and configuration through Azure DevOps APIs, runs their associated NUnit methods with `dotnet test`, and publishes outcomes and attachments back to the Test Plan.
+- The secret pipeline variable `AZDO_PAT` must have Work Items read and Test Management read/write access for Linux Test Plans runs.
+- The hosted Windows job continues to use the Visual Studio Test task's Test Plan selector.
 - Base URL variables follow: `VIEWPOINT_BASE_URL_<ENVIRONMENT>`
 - The checked-in pipeline YAML files do not hardcode a PROD base URL, so Azure DevOps variables must provide `VIEWPOINT_BASE_URL_PROD` and any other environment URLs you use.
 
@@ -42,6 +45,7 @@ Before using this skill, make sure all of the following are true:
   - `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
   - `VIEWPOINT_BASE_URL_PROD` for production
   - any additional environment URLs you want to run, such as `VIEWPOINT_BASE_URL_DEV` or `VIEWPOINT_BASE_URL_STAGE`
+- The secret pipeline variable `AZDO_PAT` with Work Items read and Test Management read/write access for Linux Test Plans runs
 - You know the specific Azure Test Plan ID, suite ID, and configuration ID you want to execute
 - If the target environment is private, a reachable self-hosted agent pool exists and is permitted for the pipeline
 
@@ -85,9 +89,9 @@ Use these values:
 
 Expected result:
 
-- Azure finds the automated test cases in the suite
-- the pipeline executes the associated automation
-- the result is published back through the Test Plans flow
+- The pipeline selects automated test points for the requested plan, suite, and configuration
+- The pipeline executes the associated NUnit automation on the selected agent
+- Outcomes and test attachments are published to Azure Test Plans; TRX files are also published to the pipeline run
 
 ### 3) Verify from Azure Test Plans
 

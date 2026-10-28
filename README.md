@@ -133,6 +133,8 @@ Before building, CI fetches the current test cases and parameter rows from Plan 
 
 This updates the automation association on existing Test Case work items; it does not create new Test Case items or store C# source code in the Test Plans suite. The generated C# exists in the pipeline workspace for that run. This CI pipeline does not use the Azure Test Plans on-demand VSTest flow.
 
+The `QA.Regression.Automation/azure-testplans-run.yml` pipeline uses the same self-hosted Linux agent for `DEV` and `STAGE`. On Linux it selects automated test points by plan, suite, and configuration through the Azure DevOps Test APIs, runs their associated NUnit methods with `dotnet test`, and writes outcomes and evidence attachments back to the Test Plan. It also publishes TRX files to the pipeline run. The hosted Windows route continues to use the Visual Studio Test task's Test Plan selector.
+
 ## Azure variable checklist
 
 Create these Azure Pipeline variables before running:
@@ -146,7 +148,7 @@ Create these Azure Pipeline variables before running:
 - `VIEWPOINT_BASE_URL_STAGE`
 - `AZDO_PAT` (secret)
 
-Configure these in Azure DevOps pipeline variables or a variable group. Mark credentials and `AZDO_PAT` as secret. The PAT must be able to read Test Plans and read/write Work Items so CI can fetch cases and update their automated-test association. Set each base URL to its actual environment URL. The pipeline validates the selected environment's URL and credentials before running tests.
+Configure these in Azure DevOps pipeline variables or a variable group. Mark credentials and `AZDO_PAT` as secret. The PAT must have Work Items read/write and Test Management read/write access so CI can fetch cases and update automation associations, and the Linux Test Plans pipeline can select test points and publish results and attachments. Set each base URL to its actual environment URL. The pipeline validates the selected environment's URL and credentials before running tests.
 
 The Linux agents need Python 3 with `venv`, .NET 10, passwordless `sudo` for the pipeline to install Chromium's system dependencies, and outbound access to Azure DevOps, PyPI, and the Playwright browser download service. DEV/STAGE also need VPN access to their target environments. The pipeline installs Chromium through Playwright's .NET API, so PowerShell 7 is not required. If the agent account cannot use passwordless `sudo`, an administrator must preinstall Python/venv and the Linux browser dependencies.
 

@@ -1200,6 +1200,105 @@ class AzureDevOpsClient:
             )
         return normalized
 
+    def create_test_run(
+        self,
+        *,
+        plan_id: int,
+        point_ids: list[int],
+        configuration_ids: list[int],
+        name: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        if not point_ids:
+            raise ValueError("At least one test point is required to create a test run.")
+        payload = self._send(
+            "POST",
+            "/_apis/test/runs",
+            params={"api-version": "7.1"},
+            json_body={
+                "name": name,
+                "comment": comment,
+                "plan": {"id": str(int(plan_id))},
+                "pointIds": [int(point_id) for point_id in point_ids],
+                "configurationIds": [int(configuration_id) for configuration_id in configuration_ids],
+                "automated": True,
+                "state": "InProgress",
+                "startDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise AzureDevOpsError("Unexpected response format when creating a test run.")
+        return payload
+
+    def get_test_run_results(self, run_id: int) -> list[dict[str, Any]]:
+        payload = self._get(
+            f"/_apis/test/runs/{int(run_id)}/results",
+            params={"api-version": "7.1", "$top": 1000},
+        )
+        values = payload.get("value", []) or []
+        return [item for item in values if isinstance(item, dict)]
+
+    def add_test_run_results(self, run_id: int, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not results:
+            return []
+        payload = self._send(
+            "POST",
+            f"/_apis/test/runs/{int(run_id)}/results",
+            params={"api-version": "7.1"},
+            json_body=results,
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("value"), list):
+            raise AzureDevOpsError("Unexpected response format when adding test results.")
+        return [item for item in payload["value"] if isinstance(item, dict)]
+
+    def update_test_run_results(self, run_id: int, results: list[dict[str, Any]]) -> None:
+        if not results:
+            return
+        self._send(
+            "PATCH",
+            f"/_apis/test/runs/{int(run_id)}/results",
+            params={"api-version": "7.1"},
+            json_body=results,
+        )
+
+    def add_test_result_attachment(
+        self,
+        *,
+        run_id: int,
+        result_id: int,
+        file_name: str,
+        stream: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        payload = self._send(
+            "POST",
+            f"/_apis/test/Runs/{int(run_id)}/Results/{int(result_id)}/attachments",
+            params={"api-version": "7.1"},
+            json_body={
+                "stream": stream,
+                "fileName": file_name,
+                "comment": comment,
+                "attachmentType": "GeneralAttachment",
+            },
+        )
+        if not isinstance(payload, dict):
+            raise AzureDevOpsError("Unexpected response format when adding a test result attachment.")
+        return payload
+
+    def complete_test_run(self, run_id: int, *, error_message: str = "") -> None:
+        payload: dict[str, Any] = {
+            "state": "Completed",
+            "completedDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        if error_message:
+            payload["errorMessage"] = error_message[:1000]
+        self._send(
+            "PATCH",
+            f"/_apis/test/runs/{int(run_id)}",
+            params={"api-version": "7.1"},
+            json_body=payload,
+        )
+
     def resolve_effective_suite_configuration_ids(self, plan_id: int, suite_id: int) -> list[int]:
         suites = self.list_plan_suites(plan_id)
         by_id: dict[int, dict[str, Any]] = {}

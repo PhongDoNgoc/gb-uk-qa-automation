@@ -7,6 +7,7 @@ from automation_association import associate_generated_tests
 from automation_generator import generate_automation_scripts
 from azure_client import AzureDevOpsClient, AzureDevOpsError
 from config import load_config, setup_logging, validate_required
+from test_plan_runner import run_test_plan
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Replace an existing Azure Test Case automation association",
     )
+
+    run_plan = sub.add_parser("run-test-plan", help="Run associated test points and publish results to Azure Test Plans")
+    run_plan.add_argument("--plan-id", required=True, type=int, help="Azure Test Plan ID")
+    run_plan.add_argument("--suite-id", required=True, type=int, help="Azure Test Suite ID")
+    run_plan.add_argument("--configuration-id", required=True, type=int, help="Azure Test Configuration ID")
+    run_plan.add_argument(
+        "--test-project",
+        default="QA.Regression.Automation/QA.Regression.Automation.csproj",
+        help="Path to the NUnit test project",
+    )
+    run_plan.add_argument("--build-configuration", default="Release", help="Build configuration to execute")
+    run_plan.add_argument("--results-directory", required=True, help="Directory for generated TRX files and attachments")
 
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
@@ -118,6 +131,26 @@ def _run() -> int:
             print(f"Storage: {result['test_storage']}  Type: {result['test_type']}")
             print(f"Associated: {len(result['updated'])}  Skipped: {len(result['skipped'])}")
             return 0
+
+        if args.command == "run-test-plan":
+            client = _build_azure_client_or_fail()
+            if client is None:
+                return 1
+            result = run_test_plan(
+                client=client,
+                plan_id=args.plan_id,
+                suite_id=args.suite_id,
+                configuration_id=args.configuration_id,
+                test_project=args.test_project,
+                build_configuration=args.build_configuration,
+                results_directory=args.results_directory,
+            )
+            print(f"Azure Test Plan run: {result['run_id']}")
+            print(
+                f"Cases passed: {result['passed_case_count']}  "
+                f"Cases failed: {result['failed_case_count']}"
+            )
+            return 1 if result["failed_case_count"] else 0
 
         parser.print_help()
         return 1
