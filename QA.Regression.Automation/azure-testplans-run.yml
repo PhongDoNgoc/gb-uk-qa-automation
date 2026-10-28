@@ -45,7 +45,10 @@ jobs:
       name: ${{ parameters.selfHostedPoolName }}
       demands:
       - Agent.OS -equals Linux
-      - Agent.Name -equals gbvmdsmanagerdne01
+      - ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        - Agent.Name -equals gbvmdsmanagersne01
+      - ${{ else }}:
+        - Agent.Name -equals gbvmdsmanagerdne01
     steps:
     - task: UseDotNet@2
       displayName: Use .NET 10 SDK

@@ -34,6 +34,9 @@ jobs:
       name: SelfHostedAP-Dev-NE-Swarm
       demands:
       - Agent.OS -equals Linux
-      - Agent.Name -equals gbvmdsmanagerdne01
+      - ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        - Agent.Name -equals gbvmdsmanagersne01
+      - ${{ else }}:
+        - Agent.Name -equals gbvmdsmanagerdne01
     steps:
     - template: templates/regression-steps.yml
