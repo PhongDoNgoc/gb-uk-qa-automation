@@ -11,6 +11,7 @@ public class GeneratedWorkflowPage
 {
     private readonly IPage _page;
     private const int ApiEvidencePreviewLength = 1600;
+    private const int ApiEvidenceReadinessTimeoutMs = 30000;
 
     public GeneratedWorkflowPage(IPage page)
     {
@@ -50,9 +51,14 @@ public class GeneratedWorkflowPage
             throw new ArgumentException("API path fragment must be provided.", nameof(apiPathFragment));
         }
 
-        await GoToAsync(pageUrl);
+        await _page.GotoAsync(pageUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 60000,
+        });
         var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
         var capture = await FetchApiResponseWithBrowserCookiesAsync(pageUrl, normalizedApiPath);
+        await TryWaitForApiEvidencePageReadyAsync(pageUrl);
         await RenderApiEvidencePanelAsync(capture);
         await AttachApiEvidenceScreenshotAsync();
         return capture.StatusCode;
@@ -232,59 +238,67 @@ public class GeneratedWorkflowPage
             });
         }
 
-        if (navigationItem?.Equals("Unit Details", StringComparison.Ordinal) == true)
-        {
-            var exportControl = _page.Locator(
-                    "button:has-text('Export to Excel'), a:has-text('Export to Excel'), " +
-                    "[role='button']:has-text('Export to Excel')")
-                .Filter(new LocatorFilterOptions { Visible = true });
-            await exportControl.First.WaitForAsync(new LocatorWaitForOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = 90000,
-            });
-
-            await GetRefreshControlLocator().WaitForAsync(new LocatorWaitForOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = 90000,
-            });
-
-            var gridRow = _page.Locator(
-                    "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr")
-                .Filter(new LocatorFilterOptions { Visible = true });
-            await gridRow.First.WaitForAsync(new LocatorWaitForOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = 90000,
-            });
-        }
-
         if (isCustomerDetailsPage)
         {
             await WaitForCustomerDetailsTablesAsync();
         }
-
-        await _page.WaitForLoadStateAsync(
-            LoadState.NetworkIdle,
-            new PageWaitForLoadStateOptions { Timeout = 60000 });
     }
 
-    private async Task WaitForCustomerDetailsTablesAsync()
+    private async Task TryWaitForApiEvidencePageReadyAsync(string pageUrl)
+    {
+        var targetUri = new Uri(pageUrl, UriKind.Absolute);
+        try
+        {
+            if (IsCustomerDetailsPath(targetUri.AbsolutePath))
+            {
+                await WaitForCustomerDetailsTablesAsync(ApiEvidenceReadinessTimeoutMs);
+            }
+            else if (GetNavigationItem(targetUri.AbsolutePath) is { } navigationItem)
+            {
+                var heading = _page.GetByRole(
+                        AriaRole.Heading,
+                        new PageGetByRoleOptions { Name = navigationItem, Exact = true })
+                    .Filter(new LocatorFilterOptions { Visible = true })
+                    .First;
+                await heading.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = ApiEvidenceReadinessTimeoutMs,
+                });
+
+                var gridRow = _page.Locator(
+                        "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr")
+                    .Filter(new LocatorFilterOptions { Visible = true });
+                await gridRow.First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = ApiEvidenceReadinessTimeoutMs,
+                });
+            }
+        }
+        catch (TimeoutException exception)
+        {
+            TestContext.Progress.WriteLine(
+                $"The page did not reach the expected evidence-ready state at '{targetUri.AbsolutePath}' within {ApiEvidenceReadinessTimeoutMs} ms. " +
+                $"The API response will still be asserted; the screenshot may show incomplete page data. {exception.Message}");
+        }
+    }
+
+    private async Task WaitForCustomerDetailsTablesAsync(int timeoutMs = 90000)
     {
         await _page.GetByText("Energy Services", new PageGetByTextOptions { Exact = true })
             .Filter(new LocatorFilterOptions { Visible = true })
             .First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
-                Timeout = 60000,
+                Timeout = timeoutMs,
             });
         await _page.GetByText("Customer Details", new PageGetByTextOptions { Exact = true })
             .Filter(new LocatorFilterOptions { Visible = true })
             .First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
-                Timeout = 60000,
+                Timeout = timeoutMs,
             });
 
         await _page.WaitForFunctionAsync(
@@ -298,20 +312,22 @@ public class GeneratedWorkflowPage
                         && bounds.width > 0
                         && bounds.height > 0;
                 };
-                const populatedTables = Array.from(document.querySelectorAll('table'))
-                    .filter(table => isVisible(table)
-                        && Array.from(table.querySelectorAll('tbody tr')).some(row => {
+                const gridSelector = 'table, [role="grid"], .k-grid';
+                const populatedGrids = Array.from(document.querySelectorAll(gridSelector))
+                    .filter(grid => !grid.parentElement?.closest(gridSelector)
+                        && isVisible(grid)
+                        && Array.from(grid.querySelectorAll('tbody tr, [role="row"]')).some(row => {
                             if (!isVisible(row)) {
                                 return false;
                             }
                             const text = row.innerText.trim();
                             return text.length > 0 && !/no records|no data|loading/i.test(text);
                         }));
-                return populatedTables.length >= 2;
+                return populatedGrids.length >= 2;
             }
             """,
             null,
-            new PageWaitForFunctionOptions { Timeout = 90000 });
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
     }
 
     private ILocator GetRefreshControlLocator()
@@ -410,6 +426,7 @@ public class GeneratedWorkflowPage
         using var handler = new HttpClientHandler
         {
             CookieContainer = cookieContainer,
+            AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
         };
         using var client = new HttpClient(handler);

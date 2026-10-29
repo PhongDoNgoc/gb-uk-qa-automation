@@ -40,7 +40,7 @@ public class LoginPage
         await PasswordInput.First.WaitForAsync(new LocatorWaitForOptions { Timeout = DefaultTimeoutMs });
         await PasswordInput.First.FillAsync(password);
         await SignInButton.First.WaitForAsync(new LocatorWaitForOptions { Timeout = DefaultTimeoutMs });
-        await SignInButton.First.PressAsync("Enter");
+        await SignInButton.First.ClickAsync();
     }
 
     public async Task<bool> IsWelcomeMessageDisplayedAsync()
