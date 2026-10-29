@@ -12,6 +12,7 @@ public class GeneratedWorkflowPage
     private readonly IPage _page;
     private const int ApiEvidencePreviewLength = 1600;
     private const int ApiEvidenceReadinessTimeoutMs = 30000;
+    private const int UnitDetailsReadinessTimeoutMs = 30000;
 
     public GeneratedWorkflowPage(IPage page)
     {
@@ -236,12 +237,115 @@ public class GeneratedWorkflowPage
                 State = WaitForSelectorState.Visible,
                 Timeout = 60000,
             });
+
+            if (navigationItem.Equals("Unit Details", StringComparison.Ordinal))
+            {
+                await WaitForUnitDetailsPageReadyWithRetryAsync();
+            }
         }
 
         if (isCustomerDetailsPage)
         {
             await WaitForCustomerDetailsTablesAsync();
         }
+    }
+
+    private async Task WaitForUnitDetailsPageReadyWithRetryAsync()
+    {
+        try
+        {
+            await WaitForUnitDetailsPageReadyAsync();
+            return;
+        }
+        catch (TimeoutException)
+        {
+            TestContext.Progress.WriteLine(
+                "Unit Details did not render its grid and Refresh control; reloading the page once to recover from delayed page data.");
+        }
+
+        await _page.ReloadAsync(new PageReloadOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 60000,
+        });
+
+        try
+        {
+            await WaitForUnitDetailsPageReadyAsync();
+        }
+        catch (TimeoutException exception)
+        {
+            var diagnostics = await GetUnitDetailsReadinessDiagnosticsAsync();
+            throw new TimeoutException(
+                $"Unit Details still has no ready grid and visible Refresh control after one page reload. {diagnostics}",
+                exception);
+        }
+    }
+
+    private async Task WaitForUnitDetailsPageReadyAsync()
+    {
+        var grid = _page.Locator("table, [role='grid'], .k-grid")
+            .Filter(new LocatorFilterOptions { Visible = true })
+            .First;
+        await grid.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = UnitDetailsReadinessTimeoutMs,
+        });
+
+        var gridRow = _page.Locator(
+                "table tbody tr, [role='grid'] [role='row'], .k-grid tbody tr")
+            .Filter(new LocatorFilterOptions { Visible = true })
+            .First;
+        await gridRow.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = UnitDetailsReadinessTimeoutMs,
+        });
+
+        await GetRefreshControlLocator().WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = UnitDetailsReadinessTimeoutMs,
+        });
+    }
+
+    private async Task<string> GetUnitDetailsReadinessDiagnosticsAsync()
+    {
+        return await _page.EvaluateAsync<string>(
+            """
+            () => {
+                const isVisible = element => {
+                    const style = window.getComputedStyle(element);
+                    const bounds = element.getBoundingClientRect();
+                    return style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && bounds.width > 0
+                        && bounds.height > 0;
+                };
+                const grids = Array.from(document.querySelectorAll('table, [role="grid"], .k-grid'))
+                    .filter(isVisible);
+                const rows = Array.from(document.querySelectorAll(
+                    'table tbody tr, [role="grid"] [role="row"], .k-grid tbody tr'))
+                    .filter(isVisible);
+                const refreshControls = Array.from(document.querySelectorAll(
+                    'button, a, [role="button"], input'))
+                    .filter(isVisible)
+                    .map(element => [
+                        element.innerText,
+                        element.getAttribute('aria-label'),
+                        element.getAttribute('title'),
+                        element.getAttribute('class')
+                    ].filter(Boolean).join(' ').trim())
+                    .filter(label => /refresh|sync|reload|rotate/i.test(label))
+                    .slice(0, 5);
+                return JSON.stringify({
+                    visibleGridCount: grids.length,
+                    visibleGridRowCount: rows.length,
+                    visibleRefreshControls: refreshControls
+                });
+            }
+            """);
     }
 
     private async Task TryWaitForApiEvidencePageReadyAsync(string pageUrl)
@@ -368,6 +472,8 @@ public class GeneratedWorkflowPage
             "[aria-label*='Refresh' i]",
             "[title*='Refresh' i]",
             "[data-original-title*='refresh' i]",
+            "[data-bs-original-title*='refresh' i]",
+            "[data-testid*='refresh' i]",
         });
         return _page.Locator(refreshSelector)
             .Filter(new LocatorFilterOptions { Visible = true })

@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using NUnit.Framework;
 
 namespace QA.Regression.Automation.Pages;
 
@@ -6,6 +7,7 @@ public class LoginPage
 {
     private const int DefaultTimeoutMs = 30000;
     private const int PostLoginTimeoutMs = 90000;
+    private const int NavigationAttempts = 3;
     private readonly IPage _page;
 
     private ILocator EmailInput => _page.Locator("input[type='email'], input[name='email'], input[autocomplete='username'], input[placeholder*='email' i]");
@@ -20,7 +22,31 @@ public class LoginPage
 
     public async Task GoToAsync(string url)
     {
-        await _page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+        for (var attempt = 1; attempt <= NavigationAttempts; attempt++)
+        {
+            try
+            {
+                await _page.GotoAsync(url, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60000,
+                });
+                return;
+            }
+            catch (PlaywrightException exception) when (
+                attempt < NavigationAttempts && IsTransientConnectionFailure(exception))
+            {
+                TestContext.Progress.WriteLine(
+                    $"Login page navigation failed with a transient connection error (attempt {attempt}/{NavigationAttempts}); retrying.");
+                await Task.Delay(TimeSpan.FromSeconds(attempt));
+            }
+        }
+    }
+
+    internal static bool IsTransientConnectionFailure(PlaywrightException exception)
+    {
+        return exception.Message.Contains("net::ERR_CONNECTION_CLOSED", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("net::ERR_CONNECTION_RESET", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> IsLoginScreenDisplayedAsync()
