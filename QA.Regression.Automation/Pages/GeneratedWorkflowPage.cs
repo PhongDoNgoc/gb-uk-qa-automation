@@ -27,22 +27,39 @@ public class GeneratedWorkflowPage
                 targetUri.GetLeftPart(UriPartial.Authority),
                 StringComparison.OrdinalIgnoreCase);
         var navigationItem = isSameOrigin ? GetNavigationItem(targetUri.AbsolutePath) : null;
-        if (navigationItem is not null)
-        {
-            await NavigateThroughUtilitiesAsync(targetUri, navigationItem);
-        }
-        else
-        {
-            await _page.GotoAsync(url, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 60000,
-            });
-        }
+        var unitDetailsDiagnostics = GetNavigationItem(targetUri.AbsolutePath) == "Unit Details"
+            ? new UnitDetailsNavigationDiagnostics(_page)
+            : null;
 
-        await WaitForPageReadyAsync(
-            navigationItem,
-            isSameOrigin && IsCustomerDetailsPath(targetUri.AbsolutePath));
+        try
+        {
+            if (navigationItem is not null)
+            {
+                await NavigateThroughUtilitiesAsync(targetUri, navigationItem);
+            }
+            else
+            {
+                await _page.GotoAsync(url, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.NetworkIdle,
+                    Timeout = 60000,
+                });
+            }
+
+            await WaitForPageReadyAsync(
+                navigationItem,
+                isSameOrigin && IsCustomerDetailsPath(targetUri.AbsolutePath));
+        }
+        catch (TimeoutException exception) when (unitDetailsDiagnostics is not null)
+        {
+            throw new TimeoutException(
+                $"{exception.Message} Browser diagnostics: {unitDetailsDiagnostics.GetSummary()}",
+                exception);
+        }
+        finally
+        {
+            unitDetailsDiagnostics?.Dispose();
+        }
     }
 
     public async Task<int> GoToAndCaptureApiResponseStatusAsync(string pageUrl, string apiPathFragment)
@@ -707,6 +724,77 @@ public class GeneratedWorkflowPage
         catch (JsonException)
         {
             return trimmed;
+        }
+    }
+
+    private sealed class UnitDetailsNavigationDiagnostics : IDisposable
+    {
+        private const int MaxEntries = 20;
+        private readonly IPage _page;
+        private readonly List<string> _entries = new();
+        private readonly EventHandler<IRequest> _requestFailedHandler;
+        private readonly EventHandler<IResponse> _responseHandler;
+        private readonly EventHandler<string> _pageErrorHandler;
+
+        public UnitDetailsNavigationDiagnostics(IPage page)
+        {
+            _page = page;
+            _requestFailedHandler = (_, request) =>
+                Add($"Request failed: {request.Method} {GetSafeUrl(request.Url)} ({request.Failure ?? "unknown"}).");
+            _responseHandler = (_, response) =>
+            {
+                if (response.Status >= 400)
+                {
+                    Add($"HTTP {response.Status}: {response.Request.Method} {GetSafeUrl(response.Url)}.");
+                }
+            };
+            _pageErrorHandler = (_, error) =>
+            {
+                var errorType = error.Split(':', 2)[0].Trim();
+                Add($"Uncaught page error: {Truncate(errorType, 120)}.");
+            };
+
+            _page.RequestFailed += _requestFailedHandler;
+            _page.Response += _responseHandler;
+            _page.PageError += _pageErrorHandler;
+        }
+
+        public string GetSummary()
+        {
+            return _entries.Count == 0
+                ? "No failed requests, HTTP errors, or uncaught page errors were observed."
+                : string.Join(" ", _entries);
+        }
+
+        public void Dispose()
+        {
+            _page.RequestFailed -= _requestFailedHandler;
+            _page.Response -= _responseHandler;
+            _page.PageError -= _pageErrorHandler;
+        }
+
+        private void Add(string entry)
+        {
+            if (_entries.Count == MaxEntries)
+            {
+                _entries.RemoveAt(0);
+            }
+
+            _entries.Add(entry);
+        }
+
+        private static string GetSafeUrl(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                ? $"{uri.GetLeftPart(UriPartial.Authority)}{uri.AbsolutePath}"
+                : "<unavailable URL>";
+        }
+
+        private static string Truncate(string value, int maxLength)
+        {
+            return value.Length <= maxLength
+                ? value
+                : $"{value[..maxLength]}...";
         }
     }
 
