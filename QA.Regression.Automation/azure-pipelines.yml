@@ -31,7 +31,10 @@ jobs:
   - job: RunRegression
     displayName: Run Playwright regression tests
     pool:
-      name: SelfHostedAP-Dev-NE-Swarm
+      ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        name: SelfHostedAP-Stg-NE-Swarm
+      ${{ else }}:
+        name: SelfHostedAP-Dev-NE-Swarm
       demands:
       - Agent.OS -equals Linux
       - ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:

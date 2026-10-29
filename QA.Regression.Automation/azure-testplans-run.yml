@@ -42,7 +42,10 @@ jobs:
   - job: RunTestPlanOnSelfHosted
     displayName: Run Azure Test Plan on self-hosted agent
     pool:
-      name: ${{ parameters.selfHostedPoolName }}
+      ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        name: SelfHostedAP-Stg-NE-Swarm
+      ${{ else }}:
+        name: ${{ parameters.selfHostedPoolName }}
       demands:
       - Agent.OS -equals Linux
       - ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
