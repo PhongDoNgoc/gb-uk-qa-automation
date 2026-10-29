@@ -235,6 +235,48 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertEqual(manifest["suite_id"], 31681)
             self.assertEqual(manifest["generated_count"], 1)
             self.assertEqual(manifest["tests"][0]["strategy"], "login-success")
+            self.assertEqual(
+                manifest["tests"][0]["fully_qualified_name"],
+                "QA.Regression.Automation.Tests.Generated.Suite31681."
+                "Tc31682LogInViewPointPortalTests.Tc31682_LogInViewPointPortal",
+            )
+
+    def test_generate_scripts_keeps_long_automated_test_names_within_ado_limit(self):
+        long_title = "Verify " + "Unit Details data " * 25
+        suite_export = f"""Plan ID: 30985
+Suite ID: 31681
+Test Cases: 1
+
+1. [32123] {long_title}
+   Step 1 Action: Open the Unit Details page
+   Step 1 Expected: The page is displayed.
+"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            (project_dir / "Tests").mkdir(parents=True)
+            suite_file = root / "suite_31681_testcases.txt"
+            suite_file.write_text(suite_export, encoding="utf-8")
+
+            result = generate_automation_scripts(
+                client=None,
+                suite_file=str(suite_file),
+                plan_id=None,
+                suite_id=None,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated",
+                overwrite=False,
+            )
+
+            generated_test = result["generated"][0]
+            fully_qualified_name = generated_test["fully_qualified_name"]
+            generated_file = Path(generated_test["file_path"])
+            content = generated_file.read_text(encoding="utf-8")
+
+            self.assertLessEqual(len(fully_qualified_name), 255)
+            self.assertIn(generated_test["class_name"], content)
+            self.assertIn(generated_test["method_name"], content)
+            self.assertIn(long_title.strip(), content)
 
     def test_generate_scripts_writes_negative_login_assertion(self):
         with tempfile.TemporaryDirectory() as td:

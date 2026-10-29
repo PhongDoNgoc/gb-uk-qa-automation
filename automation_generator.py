@@ -9,6 +9,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from azure_serialization import parse_existing_steps, parse_local_data_source_rows
 
+MAX_AUTOMATED_TEST_NAME_LENGTH = 255
+
 
 @dataclass
 class SuiteStep:
@@ -66,8 +68,7 @@ def generate_automation_scripts(
     skipped: list[dict[str, Any]] = []
 
     for test_case in source.test_cases:
-        class_name = _build_class_name(test_case)
-        method_name = _build_method_name(test_case)
+        class_name, method_name = _build_test_identifiers(test_case, suite_namespace)
         file_name = f"{class_name}.cs"
         target_path = tests_dir / file_name
         _delete_stale_test_case_files(tests_dir, test_case.test_case_id, target_path, overwrite=overwrite)
@@ -262,12 +263,31 @@ def _resolve_project_dir(project_dir: str | None) -> Path:
     return resolved
 
 
-def _build_class_name(test_case: SuiteTestCase) -> str:
-    return f"Tc{test_case.test_case_id}{_to_pascal_case(test_case.title)}Tests"
+def _build_test_identifiers(test_case: SuiteTestCase, namespace: str) -> tuple[str, str]:
+    title_suffix = _to_pascal_case(test_case.title)
+    class_name = f"Tc{test_case.test_case_id}{title_suffix}Tests"
+    method_name = f"Tc{test_case.test_case_id}_{title_suffix}"
+    fully_qualified_name = f"{namespace}.{class_name}.{method_name}"
+    if len(fully_qualified_name) <= MAX_AUTOMATED_TEST_NAME_LENGTH:
+        return class_name, method_name
 
+    class_name = f"Tc{test_case.test_case_id}Tests"
+    method_prefix = f"Tc{test_case.test_case_id}_"
+    title_suffix_length = (
+        MAX_AUTOMATED_TEST_NAME_LENGTH
+        - len(namespace)
+        - len(class_name)
+        - len(method_prefix)
+        - 2
+    )
+    if title_suffix_length < 0:
+        raise ValueError(
+            f"Namespace is too long to associate generated tests with Azure DevOps "
+            f"(maximum automated test name length is {MAX_AUTOMATED_TEST_NAME_LENGTH})."
+        )
 
-def _build_method_name(test_case: SuiteTestCase) -> str:
-    return f"Tc{test_case.test_case_id}_{_to_pascal_case(test_case.title)}"
+    method_name = f"{method_prefix}{title_suffix[:title_suffix_length]}"
+    return class_name, method_name
 
 
 def _to_pascal_case(value: str) -> str:
