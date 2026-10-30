@@ -9,6 +9,52 @@ namespace QA.Regression.Automation.Tests;
 public class GeneratedWorkflowPageBrowserTests : BaseTest
 {
     [Test]
+    public async Task GoToAsyncDoesNotWaitForNetworkIdleWhenPageHasContinuousRequests()
+    {
+        const string pageUrl = "https://payment-availability.example.test/PaymentAvailability/PaymentAvailabilityIndex";
+        const string pageHtml = """
+            <html>
+                <body>
+                    <h1>Payment Availability</h1>
+                    <script>
+                        window.heartbeatCount = 0;
+                        setInterval(() => {
+                            window.heartbeatCount++;
+                            fetch('/heartbeat?count=' + window.heartbeatCount).catch(() => {});
+                        }, 100);
+                    </script>
+                </body>
+            </html>
+            """;
+
+        await Page.RouteAsync("https://payment-availability.example.test/**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/heartbeat")
+            {
+                await route.FulfillAsync(new RouteFulfillOptions { Status = 204 });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                ContentType = "text/html",
+                Body = pageHtml,
+            });
+        });
+
+        var workflowPage = new GeneratedWorkflowPage(Page);
+        await workflowPage.GoToAsync(pageUrl);
+        await Page.WaitForFunctionAsync(
+            "() => window.heartbeatCount >= 2",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 5000 });
+
+        Assert.That(
+            await Page.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Name = "Payment Availability" }).IsVisibleAsync(),
+            Is.True);
+    }
+
+    [Test]
     public async Task GoToAsyncReloadsUnitDetailsWhenGridAndRefreshControlAreDelayed()
     {
         const string pageUrl = "https://unit-details.example.test/UnitDetails/UnitDetail";

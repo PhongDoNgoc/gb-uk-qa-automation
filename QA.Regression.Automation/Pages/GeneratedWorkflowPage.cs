@@ -41,7 +41,7 @@ public class GeneratedWorkflowPage
             {
                 await _page.GotoAsync(url, new PageGotoOptions
                 {
-                    WaitUntil = WaitUntilState.NetworkIdle,
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = 60000,
                 });
             }
