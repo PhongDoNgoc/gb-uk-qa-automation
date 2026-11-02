@@ -469,8 +469,10 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
             lines.append("")
         lines.append(f"// Step {step.index}: {_escape_csharp_string(_sanitize_action_text_for_comment(step.action))}")
         url = _extract_first_url(step.action)
+        menu_item = _extract_navigation_menu_item(step.action)
+        menu_argument = f', "{_escape_csharp_string(menu_item)}"' if menu_item else ""
         if url:
-            lines.append(f"await workflowPage.GoToAsync({_build_resolved_url_expression(url)});")
+            lines.append(f"await workflowPage.GoToAsync({_build_resolved_url_expression(url)}{menu_argument});")
         else:
             baseurl_reference = _extract_baseurl_reference(
                 step.action,
@@ -480,7 +482,7 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
             )
             if baseurl_reference:
                 lines.append(
-                    f'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(baseurl_reference)}"));'
+                    f'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("{_escape_csharp_string(baseurl_reference)}"){menu_argument});'
                 )
 
         action_lower = step.action.lower()
@@ -793,6 +795,17 @@ def _extract_click_target(value: str) -> str:
     if re.fullmatch(r"export\s+to\s+excel", target, re.I):
         return "Export to Excel"
     return target
+
+
+def _extract_navigation_menu_item(value: str) -> str:
+    text = re.sub(r"\s+", " ", value).strip()
+    match = re.search(
+        r"\bclick\s+(?:on\s+|to\s+)+(?:the\s+)?['\"\u2018\u2019\u201c\u201d]?(?P<item>[A-Za-z0-9 &/_-]+?)"
+        r"['\"\u2018\u2019\u201c\u201d]?\s+(?:page\s+|menu\s+|link\s+)?(?:URL|link)\b",
+        text,
+        re.I,
+    )
+    return match.group("item").strip() if match else ""
 
 
 _QUOTE = "'\"\u2018\u2019\u201c\u201d"

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from automation_generator import (
     _extract_environment_specific_api_paths,
+    _extract_navigation_menu_item,
     generate_automation_scripts,
     parse_suite_export_text,
 )
@@ -252,6 +253,24 @@ class AutomationGeneratorTests(unittest.TestCase):
             content,
         )
         self.assertLess(content.index("SelectOptionAsync(\"Select Date\""), content.index("Export to Excel\");"))
+        self.assertIn(
+            'GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("/PaymentAvailability/PaymentAvailabilityIndex"), '
+            '"Payment Availability");',
+            content,
+        )
+
+    def test_navigation_menu_item_is_read_from_url_steps(self):
+        for action, expected in (
+            ("Open Utilities sub-menu and click to Portal Usage Report URL @environment : baseURL/PortalUsageReport",
+             "Portal Usage Report"),
+            ("Open Utilities sub-menu and click to Payment Availability  URL @environment: baseURL/PaymentAvailability",
+             "Payment Availability"),
+            ("Open Utilities sub-menu and click on 'Unit Details' URL: baseURL/UnitDetails/UnitDetail", "Unit Details"),
+            ("Navigate to URL: baseURL/PortalUsageReport", ""),
+            ("Click on 'Export to Excel' button", ""),
+        ):
+            with self.subTest(action=action):
+                self.assertEqual(_extract_navigation_menu_item(action), expected)
 
     def test_selector_steps_with_literal_values_and_unparseable_wording(self):
         for action, expected in (
@@ -736,7 +755,7 @@ Test Cases: 1
 
             self.assertIn("var loginPage = new LoginPage(Page);", content)
             self.assertIn(
-                'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("/UnitDetails/UnitDetail"));',
+                'await workflowPage.GoToAsync(TestEnvironmentSettings.ResolveUrlForEnvironment("/UnitDetails/UnitDetail"), "Unit Details");',
                 content,
             )
             self.assertIn('await workflowPage.ClickButtonAsync("Refresh");', content)

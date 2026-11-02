@@ -13,13 +13,58 @@ public class GeneratedWorkflowPage
     private const int ApiEvidencePreviewLength = 1600;
     private const int ApiEvidenceReadinessTimeoutMs = 30000;
     private const int UnitDetailsReadinessTimeoutMs = 30000;
+    private const int DataSettleStableMs = 1500;
+
+    internal int ExportReadyTimeoutMs { get; init; } = 120000;
+    internal int ExportDownloadTimeoutMs { get; init; } = 120000;
+    internal int DataSettleTimeoutMs { get; init; } = 60000;
+
+    // Kendo's DataSource sets _requestInProgress while a read is queued or running; exporting while it is set
+    // queues the all-pages export read behind the reload and the download never starts.
+    private const string PageDataStateScript =
+        """
+        (exportToken) => {
+            const isVisible = element => {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                const bounds = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0;
+            };
+            const widgetOf = element => window.kendo && window.jQuery ? window.kendo.widgetInstance(window.jQuery(element)) : null;
+            const isLoading = widget => !!(widget && widget.dataSource && widget.dataSource._requestInProgress);
+            const exportControl = exportToken ? document.querySelector(`[data-automation-export="${exportToken}"]`) : null;
+            const grids = exportControl
+                ? [exportControl.closest('.k-grid')].filter(Boolean)
+                : Array.from(document.querySelectorAll('.k-grid')).filter(grid =>
+                    grid.querySelector('.k-grid-excel') || /export\s+to\s+excel/i.test(grid.querySelector('.k-grid-toolbar, .k-toolbar')?.textContent || ''));
+            const busy = [];
+            for (const grid of grids) {
+                if (Array.from(grid.querySelectorAll('.k-loading-mask')).some(isVisible)) busy.push(`#${grid.id || 'grid'} loading mask visible`);
+                if (isLoading(widgetOf(grid))) busy.push(`#${grid.id || 'grid'} data request in progress`);
+            }
+            for (const element of document.querySelectorAll('[data-role="dropdownlist"], [data-role="combobox"], [data-role="multiselect"], [data-role="dropdowntree"]')) {
+                if (isLoading(widgetOf(element))) busy.push(`#${element.id || element.name || 'dropdown'} options loading`);
+            }
+            let disabled = null;
+            if (exportControl) {
+                const style = window.getComputedStyle(exportControl);
+                if (!isVisible(exportControl)) disabled = 'not visible';
+                else if (exportControl.disabled || exportControl.hasAttribute('disabled')) disabled = 'disabled attribute set';
+                else if (exportControl.getAttribute('aria-disabled') === 'true') disabled = 'aria-disabled';
+                else if (exportControl.matches('.k-disabled, .k-state-disabled, .disabled')) disabled = 'disabled class';
+                else if (style.pointerEvents === 'none') disabled = 'pointer-events none';
+                else if (parseFloat(style.opacity) < 0.9) disabled = `opacity ${style.opacity}`;
+            }
+            return { busy, disabled };
+        }
+        """;
 
     public GeneratedWorkflowPage(IPage page)
     {
         _page = page;
     }
 
-    public async Task GoToAsync(string url)
+    public async Task GoToAsync(string url, string? menuItem = null)
     {
         var targetUri = new Uri(url, UriKind.Absolute);
         var isSameOrigin = Uri.TryCreate(_page.Url, UriKind.Absolute, out var currentUri)
@@ -39,11 +84,21 @@ public class GeneratedWorkflowPage
             }
             else
             {
-                await _page.GotoAsync(url, new PageGotoOptions
+                var response = await _page.GotoAsync(url, new PageGotoOptions
                 {
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = 60000,
                 });
+                if (response is not null && response.Status >= 400)
+                {
+                    if (string.IsNullOrWhiteSpace(menuItem))
+                    {
+                        throw new InvalidOperationException(
+                            $"Navigation to '{url}' returned HTTP {response.Status}. Check the URL in the Test Case steps.");
+                    }
+
+                    await NavigateThroughMenuLinkAsync(targetUri, menuItem, response.Status);
+                }
             }
 
             await WaitForPageReadyAsync(
@@ -121,15 +176,13 @@ public class GeneratedWorkflowPage
             State = WaitForSelectorState.Visible,
             Timeout = 60000,
         });
+        await WaitForExportControlReadyAsync(exportControl);
 
-        var download = await _page.RunAndWaitForDownloadAsync(
-            async () =>
-            {
-                await exportControl.ClickAsync(new LocatorClickOptions { Timeout = 60000 });
-                TestContext.Progress.WriteLine(
-                    $"Test {TestContext.CurrentContext.Test.Name}: visible Export to Excel control clicked; waiting for download.");
-            },
-            new PageRunAndWaitForDownloadOptions { Timeout = 60000 });
+        var downloadTask = _page.WaitForDownloadAsync(new PageWaitForDownloadOptions { Timeout = ExportDownloadTimeoutMs });
+        await exportControl.ClickAsync(new LocatorClickOptions { Timeout = 60000 });
+        TestContext.Progress.WriteLine(
+            $"Test {TestContext.CurrentContext.Test.Name}: visible Export to Excel control clicked; waiting for download.");
+        var download = await WaitForDownloadOrPageMessageAsync(downloadTask);
         var failure = await download.FailureAsync();
         Assert.That(failure, Is.Null, $"Excel export download failed: {failure}");
 
@@ -146,6 +199,142 @@ public class GeneratedWorkflowPage
             "The exported Excel file is empty.");
         TestContext.AddTestAttachment(downloadPath, $"Excel export: {download.SuggestedFilename}");
         await AttachExcelDownloadEvidenceAsync(download.SuggestedFilename, fileSize, artifactDir);
+    }
+
+    private async Task WaitForExportControlReadyAsync(ILocator exportControl)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        await exportControl.EvaluateAsync("(element, token) => element.setAttribute('data-automation-export', token)", token);
+        var state = await WaitForPageDataSettledAsync(token, ExportReadyTimeoutMs);
+        if (state.Settled)
+        {
+            return;
+        }
+
+        if (state.Busy.Length == 0 && state.Disabled is not null)
+        {
+            throw new InvalidOperationException(
+                $"The Export to Excel control stayed unavailable ({state.Disabled}) for {ExportReadyTimeoutMs / 1000}s on page '{_page.Url}'. " +
+                "The grid most likely has no data for the selected filters; check the Test Case selection data.");
+        }
+
+        throw new TimeoutException(
+            $"The grid owning Export to Excel did not finish loading within {ExportReadyTimeoutMs / 1000}s on page '{_page.Url}' " +
+            $"({string.Join("; ", state.Busy.Append(state.Disabled is null ? null : $"export control {state.Disabled}").OfType<string>())}).");
+    }
+
+    private async Task<(bool Settled, string[] Busy, string? Disabled)> WaitForPageDataSettledAsync(string? exportToken, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        DateTime? stableSince = null;
+        while (true)
+        {
+            var (busy, disabled) = await GetPageDataStateAsync(exportToken);
+            var now = DateTime.UtcNow;
+            if (busy.Length == 0 && disabled is null)
+            {
+                stableSince ??= now;
+                if ((now - stableSince.Value).TotalMilliseconds >= DataSettleStableMs)
+                {
+                    return (true, busy, disabled);
+                }
+            }
+            else
+            {
+                stableSince = null;
+            }
+
+            if (now >= deadline)
+            {
+                return (false, busy, disabled);
+            }
+
+            await Task.Delay(250);
+        }
+    }
+
+    private async Task<(string[] Busy, string? Disabled)> GetPageDataStateAsync(string? exportToken)
+    {
+        try
+        {
+            var state = await _page.EvaluateAsync<JsonElement>(PageDataStateScript, exportToken ?? string.Empty);
+            var busy = state.GetProperty("busy").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray();
+            var disabled = state.GetProperty("disabled").ValueKind == JsonValueKind.String
+                ? state.GetProperty("disabled").GetString()
+                : null;
+            return (busy, disabled);
+        }
+        catch (PlaywrightException exception) when (exception.Message.Contains("context was destroyed", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("navigat", StringComparison.OrdinalIgnoreCase))
+        {
+            return (new[] { "page is navigating" }, null);
+        }
+    }
+
+    private async Task WaitForSelectionDataSettledAsync(string fieldLabel)
+    {
+        var state = await WaitForPageDataSettledAsync(null, DataSettleTimeoutMs);
+        if (!state.Settled)
+        {
+            TestContext.Progress.WriteLine(
+                $"Test {TestContext.CurrentContext.Test.Name}: page data was still loading {DataSettleTimeoutMs / 1000}s after selecting " +
+                $"'{fieldLabel}' ({string.Join("; ", state.Busy)}); continuing.");
+        }
+    }
+
+    private async Task<IDownload> WaitForDownloadOrPageMessageAsync(Task<IDownload> downloadTask)
+    {
+        try
+        {
+            while (true)
+            {
+                if (await Task.WhenAny(downloadTask, Task.Delay(500)) == downloadTask)
+                {
+                    return await downloadTask;
+                }
+
+                var message = await GetVisiblePageMessageAsync();
+                if (message is not null)
+                {
+                    _ = downloadTask.ContinueWith(task => task.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                    throw new InvalidOperationException(
+                        $"Export to Excel did not download a file; the page displayed the message '{message}' on '{_page.Url}'.");
+                }
+            }
+        }
+        catch (TimeoutException exception)
+        {
+            var (busy, _) = await GetPageDataStateAsync(null);
+            throw new TimeoutException(
+                $"No Excel download started within {ExportDownloadTimeoutMs / 1000}s after clicking Export to Excel on page '{_page.Url}'" +
+                (busy.Length > 0 ? $" (page data still loading: {string.Join("; ", busy)})." : "."),
+                exception);
+        }
+    }
+
+    private async Task<string?> GetVisiblePageMessageAsync()
+    {
+        try
+        {
+            return await _page.EvaluateAsync<string?>(
+                """
+                () => {
+                    for (const element of document.querySelectorAll('.swal2-popup, .sweet-alert, .toast-message, .toast-error, .k-notification')) {
+                        const style = window.getComputedStyle(element);
+                        const bounds = element.getBoundingClientRect();
+                        const text = (element.innerText || '').replace(/\s+/g, ' ').trim();
+                        if (style.display !== 'none' && style.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0 && text) {
+                            return text;
+                        }
+                    }
+                    return null;
+                }
+                """);
+        }
+        catch (PlaywrightException)
+        {
+            return null;
+        }
     }
 
     private async Task AttachExcelDownloadEvidenceAsync(string filename, long fileSize, string artifactDir)
@@ -208,12 +397,20 @@ public class GeneratedWorkflowPage
         var control = await FindLabelledControlAsync(fieldLabel);
         await control.ScrollIntoViewIfNeededAsync();
         var kind = await control.EvaluateAsync<string>(
-            "el => el.tagName === 'SELECT' ? 'select' : (el.matches('input, textarea') ? 'input' : 'dropdown')");
+            """
+            el => el.tagName === 'SELECT' ? 'select'
+                : !el.matches('input, textarea') ? 'dropdown'
+                : (el.readOnly || (window.jQuery && window.jQuery(el).data('datepicker'))) ? 'datepicker'
+                : 'input'
+            """);
 
         switch (kind)
         {
             case "select":
                 await SelectNativeOptionAsync(control, fieldLabel, optionText);
+                break;
+            case "datepicker":
+                await SelectBootstrapMonthAsync(control, fieldLabel, optionText);
                 break;
             case "input":
                 await FillSelectorInputAsync(control, optionText);
@@ -223,7 +420,7 @@ public class GeneratedWorkflowPage
                 break;
         }
 
-        if (!await IsSelectionAppliedAsync(control, optionText))
+        if (kind != "datepicker" && !await IsSelectionAppliedAsync(control, optionText))
         {
             throw new InvalidOperationException(
                 $"Selecting '{optionText}' in the '{fieldLabel}' selector did not update the control on page '{_page.Url}'.");
@@ -231,6 +428,114 @@ public class GeneratedWorkflowPage
 
         TestContext.Progress.WriteLine(
             $"Test {TestContext.CurrentContext.Test.Name}: selected '{optionText}' in '{fieldLabel}' selector.");
+        await WaitForSelectionDataSettledAsync(fieldLabel);
+    }
+
+    private async Task SelectBootstrapMonthAsync(ILocator control, string fieldLabel, string optionText)
+    {
+        var target = ParseMonthYear(optionText) ?? throw new InvalidOperationException(
+            $"The '{fieldLabel}' selector is a month picker, but '{optionText}' is not a month and year such as 'Jan-2026'.");
+
+        await control.ClickAsync();
+        var picker = _page.Locator(".datepicker.dropdown-menu, .datepicker-dropdown")
+            .Filter(new LocatorFilterOptions { Visible = true })
+            .First;
+        var pickedThroughCalendar = false;
+        try
+        {
+            await picker.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = 5000 });
+            pickedThroughCalendar = await TryPickCalendarMonthAsync(picker, fieldLabel, target);
+        }
+        catch (TimeoutException)
+        {
+        }
+
+        var applied = await control.EvaluateAsync<bool>(
+            """
+            (input, { year, month, picked }) => {
+                const $ = window.jQuery;
+                const picker = $ ? $(input).data('datepicker') : null;
+                if (!picked) {
+                    if (!picker) return false;
+                    $(input).datepicker('setDate', new Date(year, month - 1, 1));
+                }
+                if (picker && $('.datepicker-dropdown:visible').length) $(input).datepicker('hide');
+                return true;
+            }
+            """,
+            new { year = target.Year, month = target.Month, picked = pickedThroughCalendar });
+        if (!applied)
+        {
+            throw new InvalidOperationException(
+                $"The '{fieldLabel}' selector is read-only and did not open a month calendar on page '{_page.Url}'.");
+        }
+
+        var selectedValue = await control.InputValueAsync();
+        var selected = ParseMonthYear(selectedValue);
+        if (selected is null || selected.Value.Year != target.Year || selected.Value.Month != target.Month)
+        {
+            throw new InvalidOperationException(
+                $"Selecting '{optionText}' in the '{fieldLabel}' selector left the value '{selectedValue}' on page '{_page.Url}'.");
+        }
+    }
+
+    private static async Task<bool> TryPickCalendarMonthAsync(ILocator picker, string fieldLabel, DateTime target)
+    {
+        var monthsView = picker.Locator(".datepicker-months");
+        if (!await monthsView.IsVisibleAsync())
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            var yearText = (await monthsView.Locator(".datepicker-switch").InnerTextAsync()).Trim();
+            if (!int.TryParse(yearText, out var shownYear))
+            {
+                return false;
+            }
+
+            if (shownYear == target.Year)
+            {
+                var month = monthsView.Locator("span.month").Nth(target.Month - 1);
+                if ((await month.GetAttributeAsync("class") ?? string.Empty).Split(' ').Contains("disabled"))
+                {
+                    throw new InvalidOperationException(
+                        $"{target:MMM-yyyy} is disabled in the '{fieldLabel}' month picker; choose a month inside the allowed range.");
+                }
+
+                await month.ClickAsync();
+                return true;
+            }
+
+            var arrow = monthsView.Locator(shownYear < target.Year ? "th.next" : "th.prev");
+            if ((await arrow.GetAttributeAsync("class") ?? string.Empty).Contains("disabled"))
+            {
+                throw new InvalidOperationException(
+                    $"{target.Year} is outside the allowed range of the '{fieldLabel}' month picker.");
+            }
+
+            await arrow.ClickAsync();
+        }
+
+        return false;
+    }
+
+    internal static DateTime? ParseMonthYear(string value)
+    {
+        var formats = new[]
+        {
+            "MMM-yyyy", "MMMM-yyyy", "MMM yyyy", "MMMM yyyy", "MMM/yyyy", "MMMM/yyyy",
+            "MM-yyyy", "M-yyyy", "MM/yyyy", "M/yyyy", "yyyy-MM", "yyyy/MM",
+        };
+        return DateTime.TryParseExact(
+            System.Text.RegularExpressions.Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim(),
+            formats,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsed)
+            ? parsed
+            : null;
     }
 
     private async Task<ILocator> FindLabelledControlAsync(string fieldLabel)
@@ -564,6 +869,54 @@ public class GeneratedWorkflowPage
         return path.TrimEnd('/').Equals(
             "/CustomerDetails/CustomerDetail",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task NavigateThroughMenuLinkAsync(Uri brokenUri, string menuItem, int status)
+    {
+        TestContext.Progress.WriteLine(
+            $"WARNING: Test Case URL '{brokenUri}' returned HTTP {status}. Opening '{menuItem}' from the portal menu instead.");
+        await _page.GotoAsync(brokenUri.GetLeftPart(UriPartial.Authority) + "/", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 60000,
+        });
+
+        string? href;
+        try
+        {
+            var handle = await _page.WaitForFunctionAsync(
+                """
+                label => {
+                    const norm = text => String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+                    const link = Array.from(document.querySelectorAll('a[href]'))
+                        .find(anchor => norm(anchor.textContent) === norm(label) && !/^(#|javascript:)/i.test(anchor.getAttribute('href')));
+                    return link ? link.href : false;
+                }
+                """,
+                menuItem,
+                new PageWaitForFunctionOptions { Timeout = 30000, PollingInterval = 250 });
+            href = await handle.JsonValueAsync<string>();
+        }
+        catch (TimeoutException)
+        {
+            throw new InvalidOperationException(
+                $"Test Case URL '{brokenUri}' returned HTTP {status} and no '{menuItem}' menu link was found to recover. " +
+                "Fix the URL in the Test Case steps.");
+        }
+
+        var response = await _page.GotoAsync(href, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 60000,
+        });
+        if (response is not null && response.Status >= 400)
+        {
+            throw new InvalidOperationException(
+                $"The '{menuItem}' menu link '{href}' returned HTTP {response.Status}.");
+        }
+
+        TestContext.Progress.WriteLine(
+            $"WARNING: '{menuItem}' is at '{new Uri(href).PathAndQuery}'. Update the Test Case URL to baseURL{new Uri(href).PathAndQuery}.");
     }
 
     private async Task NavigateThroughUtilitiesAsync(Uri targetUri, string navigationItem)

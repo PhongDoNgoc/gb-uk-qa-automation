@@ -108,7 +108,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     public async Task ExportToExcelFailsWhenClickDoesNotDownloadAFile()
     {
         await Page.SetContentAsync("<button>Export to Excel</button>");
-        var workflowPage = new GeneratedWorkflowPage(Page);
+        var workflowPage = new GeneratedWorkflowPage(Page) { ExportDownloadTimeoutMs = 3000 };
 
         Assert.ThrowsAsync<TimeoutException>(
             () => workflowPage.ClickButtonAsync("Export to Excel"));
@@ -200,6 +200,171 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     public void ChooseOptionIndexPrefersExactThenUniqueWordMatch(string[] options, string wanted, int expected)
     {
         Assert.That(GeneratedWorkflowPage.ChooseOptionIndex(options, wanted), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public async Task ExportWaitsForItsGridToFinishLoadingButIgnoresOtherBusyGrids()
+    {
+        await RouteExportPageAsync("https://grid-loading.example.test/", """
+            <div class='k-grid' id='grid'>
+                <div class='k-grid-toolbar'><a class='k-grid-excel' onclick='exportGrid()'>Export to Excel</a></div>
+                <div class='k-loading-mask' style='width:20px;height:20px'></div>
+            </div>
+            <div class='k-grid' id='SummaryTablePayment'><div class='k-loading-mask' style='width:20px;height:20px'></div></div>
+            <script>
+                window.jQuery = element => element;
+                window.kendo = { widgetInstance: element => element && element.widget };
+                const grid = document.getElementById('grid');
+                grid.widget = { dataSource: { _requestInProgress: true } };
+                document.getElementById('SummaryTablePayment').widget = { dataSource: { _requestInProgress: true } };
+                setTimeout(() => {
+                    grid.widget.dataSource._requestInProgress = false;
+                    grid.querySelector('.k-loading-mask').remove();
+                }, 2000);
+                function exportGrid() {
+                    if (grid.widget.dataSource._requestInProgress) { window.exportDropped = true; return; }
+                    location.href = '/export';
+                }
+            </script>
+            """);
+
+        await new GeneratedWorkflowPage(Page).ClickButtonAsync("Export to Excel");
+
+        Assert.That(await Page.EvaluateAsync<bool>("() => window.exportDropped === true"), Is.False);
+        Assert.That(
+            await Page.Locator("#automation-excel-download-evidence").InnerTextAsync(),
+            Does.Contain("grid-export.xlsx"));
+    }
+
+    [Test]
+    public async Task ExportFailsFastWithThePageMessageWhenNoFileIsProduced()
+    {
+        await Page.SetContentAsync("""
+            <button onclick="document.body.insertAdjacentHTML('beforeend', '<div class=swal2-popup>There are no records to export</div>')">
+                Export to Excel
+            </button>
+            """);
+        var workflowPage = new GeneratedWorkflowPage(Page) { ExportDownloadTimeoutMs = 60000 };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(
+            () => workflowPage.ClickButtonAsync("Export to Excel"));
+
+        Assert.That(exception!.Message, Does.Contain("There are no records to export"));
+        Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(20)));
+    }
+
+    [Test]
+    public async Task ExportReportsAControlThatStaysDisabled()
+    {
+        await Page.SetContentAsync(
+            "<div class='k-grid'><a class='k-grid-excel' style='pointer-events:none;opacity:0.5'>Export to Excel</a></div>");
+        var workflowPage = new GeneratedWorkflowPage(Page) { ExportReadyTimeoutMs = 3000 };
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(
+            () => workflowPage.ClickButtonAsync("Export to Excel"));
+
+        Assert.That(exception!.Message, Does.Contain("stayed unavailable"));
+    }
+
+    [TestCase("Jan-2025")]
+    [TestCase("January 2025")]
+    [TestCase("01/2025")]
+    public async Task SelectOptionAsyncPicksAMonthInAReadOnlyBootstrapMonthPicker(string value)
+    {
+        await Page.SetContentAsync("""
+            <div class='input-group'><span class='input-group-addon'>Select Date</span>
+                <input id='toMonthYear' class='form-control datestyle' readonly value='Nov-2026' onclick='openPicker()'></div>
+            <div class='datepicker datepicker-dropdown dropdown-menu' style='display:none'>
+                <div class='datepicker-months'><table>
+                    <thead><tr><th class='prev'>&laquo;</th><th class='datepicker-switch'>2026</th><th class='next disabled'>&raquo;</th></tr></thead>
+                    <tbody><tr><td id='months'></td></tr></tbody>
+                </table></div>
+            </div>
+            <script>
+                const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const picker = document.querySelector('.datepicker');
+                const yearCell = document.querySelector('.datepicker-switch');
+                window.refreshCount = 0;
+                document.getElementById('months').innerHTML = names.map(name => `<span class='month'>${name}</span>`).join('');
+                function openPicker() { picker.style.display = 'block'; }
+                document.querySelector('.prev').onclick = () => yearCell.textContent = Number(yearCell.textContent) - 1;
+                document.querySelectorAll('span.month').forEach((span, index) => span.onclick = () => {
+                    document.getElementById('toMonthYear').value = `${names[index]}-${yearCell.textContent}`;
+                    picker.style.display = 'none';
+                    window.refreshCount++;
+                });
+            </script>
+            """);
+
+        await new GeneratedWorkflowPage(Page).SelectOptionAsync("Select Date", value);
+
+        Assert.That(await Page.Locator("#toMonthYear").InputValueAsync(), Is.EqualTo("Jan-2025"));
+        Assert.That(await Page.EvaluateAsync<int>("() => window.refreshCount"), Is.EqualTo(1));
+        Assert.That(await Page.Locator(".datepicker").IsVisibleAsync(), Is.False);
+    }
+
+    [Test]
+    public async Task GoToAsyncOpensTheMenuLinkWhenTheTestCaseUrlReturnsNotFound()
+    {
+        await Page.RouteAsync("https://menu-fallback.example.test/**", async route =>
+        {
+            var path = new Uri(route.Request.Url).AbsolutePath;
+            await route.FulfillAsync(path switch
+            {
+                "/" => new RouteFulfillOptions
+                {
+                    ContentType = "text/html",
+                    Body = "<nav><span>Utilities</span><ul style='display:none'>"
+                        + "<li><a href='/SystemManagement/UserAnalytics'> Portal  Usage Report </a></li></ul></nav>",
+                },
+                "/SystemManagement/UserAnalytics" => new RouteFulfillOptions
+                {
+                    ContentType = "text/html",
+                    Body = "<h2>Portal Usage Report</h2>",
+                },
+                _ => new RouteFulfillOptions { Status = 404, ContentType = "text/html", Body = "Not found" },
+            });
+        });
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await workflowPage.GoToAsync("https://menu-fallback.example.test/PortalUsageReport", "Portal Usage Report");
+
+        Assert.That(new Uri(Page.Url).AbsolutePath, Is.EqualTo("/SystemManagement/UserAnalytics"));
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(
+            () => workflowPage.GoToAsync("https://menu-fallback.example.test/Missing"));
+        Assert.That(exception!.Message, Does.Contain("HTTP 404"));
+    }
+
+    [TestCase("Jan-2026", 2026, 1)]
+    [TestCase("September 2019", 2019, 9)]
+    [TestCase("06/2019", 2019, 6)]
+    public void ParseMonthYearAcceptsCommonMonthFormats(string value, int year, int month)
+    {
+        Assert.That(GeneratedWorkflowPage.ParseMonthYear(value), Is.EqualTo(new DateTime(year, month, 1)));
+    }
+
+    private async Task RouteExportPageAsync(string pageUrl, string body)
+    {
+        await Page.RouteAsync(pageUrl + "**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/export")
+            {
+                await route.FulfillAsync(new RouteFulfillOptions
+                {
+                    ContentType = "application/vnd.ms-excel",
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Content-Disposition"] = "attachment; filename=\"grid-export.xlsx\"",
+                    },
+                    Body = "grid rows",
+                });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions { ContentType = "text/html", Body = body });
+        });
+        await Page.GotoAsync(pageUrl);
     }
 
     [Test]
