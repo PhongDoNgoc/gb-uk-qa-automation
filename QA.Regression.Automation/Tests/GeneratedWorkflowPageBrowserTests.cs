@@ -8,6 +8,63 @@ namespace QA.Regression.Automation.Tests;
 [TestFixture]
 public class GeneratedWorkflowPageBrowserTests : BaseTest
 {
+    [TestCase("report.xlsx", "export data", true)]
+    [TestCase("report.xls", "export data", true)]
+    [TestCase("report.txt", "not Excel", false)]
+    [TestCase("report.xlsx", "", false)]
+    public async Task ExportToExcelRequiresANonEmptyExcelDownload(
+        string filename, string content, bool expectedSuccess)
+    {
+        const string pageUrl = "https://export.example.test/";
+        await Page.RouteAsync("https://export.example.test/**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/export")
+            {
+                await route.FulfillAsync(new RouteFulfillOptions
+                {
+                    ContentType = "application/octet-stream",
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Content-Disposition"] = $"attachment; filename=\"{filename}\"",
+                    },
+                    Body = content,
+                });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                ContentType = "text/html",
+                Body = "<button onclick=\"location.href='/export'\">Export to Excel</button>",
+            });
+        });
+        await Page.GotoAsync(pageUrl);
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        if (expectedSuccess)
+        {
+            await workflowPage.ClickButtonAsync("Export to Excel");
+        }
+        else
+        {
+            Assert.ThrowsAsync<AssertionException>(async () =>
+            {
+                using var isolatedContext = new NUnit.Framework.Internal.TestExecutionContext.IsolatedContext();
+                await workflowPage.ClickButtonAsync("Export to Excel");
+            });
+        }
+    }
+
+    [Test]
+    public async Task ExportToExcelFailsWhenClickDoesNotDownloadAFile()
+    {
+        await Page.SetContentAsync("<button>Export to Excel</button>");
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        Assert.ThrowsAsync<TimeoutException>(
+            () => workflowPage.ClickButtonAsync("Export to Excel"));
+    }
+
     [Test]
     public async Task GoToAsyncDoesNotWaitForNetworkIdleWhenPageHasContinuousRequests()
     {

@@ -95,6 +95,33 @@ public class GeneratedWorkflowPage
 
     public async Task ClickButtonAsync(string buttonText)
     {
+        if (!buttonText.Equals("Export to Excel", StringComparison.OrdinalIgnoreCase))
+        {
+            await ClickControlAsync(buttonText);
+            return;
+        }
+
+        var download = await _page.RunAndWaitForDownloadAsync(
+            () => ClickControlAsync(buttonText),
+            new PageRunAndWaitForDownloadOptions { Timeout = 60000 });
+        var failure = await download.FailureAsync();
+        Assert.That(failure, Is.Null, $"Excel export download failed: {failure}");
+
+        var extension = Path.GetExtension(download.SuggestedFilename).ToLowerInvariant();
+        Assert.That(extension, Is.AnyOf(".xls", ".xlsx"),
+            $"Expected an Excel download, but received '{download.SuggestedFilename}'.");
+
+        var artifactDir = Path.Combine(TestContext.CurrentContext.WorkDirectory, "TestResults");
+        Directory.CreateDirectory(artifactDir);
+        var downloadPath = Path.Combine(artifactDir, $"ExcelExport-{Guid.NewGuid():N}{extension}");
+        await download.SaveAsAsync(downloadPath);
+        Assert.That(new FileInfo(downloadPath).Length, Is.GreaterThan(0),
+            "The exported Excel file is empty.");
+        TestContext.AddTestAttachment(downloadPath, $"Excel export: {download.SuggestedFilename}");
+    }
+
+    private async Task ClickControlAsync(string buttonText)
+    {
         if (buttonText.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
         {
             var refreshControl = GetRefreshControlLocator();
