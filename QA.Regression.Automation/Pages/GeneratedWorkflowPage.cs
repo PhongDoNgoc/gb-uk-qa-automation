@@ -115,9 +115,51 @@ public class GeneratedWorkflowPage
         Directory.CreateDirectory(artifactDir);
         var downloadPath = Path.Combine(artifactDir, $"ExcelExport-{Guid.NewGuid():N}{extension}");
         await download.SaveAsAsync(downloadPath);
-        Assert.That(new FileInfo(downloadPath).Length, Is.GreaterThan(0),
+        var fileSize = new FileInfo(downloadPath).Length;
+        Assert.That(fileSize, Is.GreaterThan(0),
             "The exported Excel file is empty.");
         TestContext.AddTestAttachment(downloadPath, $"Excel export: {download.SuggestedFilename}");
+        await AttachExcelDownloadEvidenceAsync(download.SuggestedFilename, fileSize, artifactDir);
+    }
+
+    private async Task AttachExcelDownloadEvidenceAsync(string filename, long fileSize, string artifactDir)
+    {
+        await _page.EvaluateAsync(
+            """
+            ({ filename, fileSize }) => {
+                document.getElementById('automation-excel-download-evidence')?.remove();
+                const panel = document.createElement('aside');
+                panel.id = 'automation-excel-download-evidence';
+                panel.setAttribute('aria-label', 'Excel download evidence');
+                panel.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;'
+                    + 'background:white;color:#163a24;border:3px solid #22863a;border-radius:8px;'
+                    + 'padding:16px;max-width:380px;box-shadow:0 4px 16px #0003;'
+                    + 'font:14px Arial,sans-serif;overflow-wrap:anywhere;pointer-events:none;';
+                for (const text of [
+                    'Excel download evidence (automation)',
+                    'Action: Export to Excel clicked',
+                    'Status: Download completed and saved',
+                    `File: ${filename}`,
+                    `Size: ${fileSize} bytes`,
+                    'Downloaded file attached to test results'
+                ]) {
+                    const line = document.createElement('div');
+                    line.textContent = text;
+                    line.style.marginBottom = '8px';
+                    panel.appendChild(line);
+                }
+                document.body.appendChild(panel);
+            }
+            """,
+            new { filename, fileSize });
+
+        var screenshotPath = Path.Combine(artifactDir, $"ExcelDownloadEvidence-{Guid.NewGuid():N}.png");
+        await _page.ScreenshotAsync(new PageScreenshotOptions
+        {
+            Path = screenshotPath,
+            FullPage = true,
+        });
+        TestContext.AddTestAttachment(screenshotPath, "Excel download evidence");
     }
 
     private async Task ClickControlAsync(string buttonText)

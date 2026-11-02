@@ -44,6 +44,12 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         if (expectedSuccess)
         {
             await workflowPage.ClickButtonAsync("Export to Excel");
+            var evidence = Page.Locator("#automation-excel-download-evidence");
+            Assert.That(await evidence.IsVisibleAsync(), Is.True);
+            var evidenceText = await evidence.InnerTextAsync();
+            Assert.That(evidenceText, Does.Contain($"File: {filename}"));
+            Assert.That(evidenceText, Does.Contain($"Size: {System.Text.Encoding.UTF8.GetByteCount(content)} bytes"));
+            Assert.That(evidenceText, Does.Contain("Download completed and saved"));
         }
         else
         {
@@ -52,6 +58,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
                 using var isolatedContext = new NUnit.Framework.Internal.TestExecutionContext.IsolatedContext();
                 await workflowPage.ClickButtonAsync("Export to Excel");
             });
+            Assert.That(await Page.Locator("#automation-excel-download-evidence").CountAsync(), Is.Zero);
         }
     }
 
