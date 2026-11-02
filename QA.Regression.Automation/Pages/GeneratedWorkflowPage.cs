@@ -160,6 +160,9 @@ public class GeneratedWorkflowPage
             FullPage = true,
         });
         TestContext.AddTestAttachment(screenshotPath, "Excel download evidence");
+        TestContext.Progress.WriteLine(
+            $"Test {TestContext.CurrentContext.Test.Name}: Excel download verified: '{filename}' ({fileSize} bytes). " +
+            "Excel file and Excel download evidence screenshot attached.");
     }
 
     private async Task ClickControlAsync(string buttonText)

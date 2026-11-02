@@ -175,6 +175,8 @@ Optional later:
 
 Clicking `Export to Excel` must produce a completed, non-empty `.xls` or `.xlsx` download within 60 seconds. The downloaded file is attached as test evidence. A dedicated screenshot also shows an automation-labelled evidence panel with the actual downloaded filename, saved file size, and completion status. This panel is not the browser's Downloads flyout, which Playwright page screenshots cannot capture. A successful click alone does not pass the export check; workbook contents are not validated.
 
+Manual steps such as `Click on 'Export to Excel' button` are translated into this download check. Generation fails explicitly if an export case cannot be translated into an `Export to Excel` click, rather than producing a test that silently omits the export. Successful exports also log the test name, downloaded filename, byte count, and evidence attachment confirmation.
+
 Each executed UI test attaches:
 
 - a Playwright trace `.zip`

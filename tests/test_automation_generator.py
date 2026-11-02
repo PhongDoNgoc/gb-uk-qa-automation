@@ -160,6 +160,53 @@ Test Cases: 1
 
 
 class AutomationGeneratorTests(unittest.TestCase):
+    def test_export_cases_generate_download_checked_click_for_manual_step_wording(self):
+        for case_id in (31855, 31857, 31865):
+            for action in (
+                "Click 'Export to Excel' button",
+                "Click on 'Export to excel' button",
+                'Click on "Export to Excel" button.',
+                "Click on \u2018Export to Excel\u2019 button",
+                "Click on Export to Excel button.",
+            ):
+                with self.subTest(case_id=case_id, action=action), tempfile.TemporaryDirectory() as td:
+                    root = Path(td)
+                    project_dir = root / "QA.Regression.Automation"
+                    project_dir.mkdir()
+                    suite_file = root / "suite.txt"
+                    suite_file.write_text(
+                        REFRESH_EXPORT.replace("[31866]", f"[{case_id}]")
+                        .replace("Verify Refresh", "Verify Export")
+                        .replace("Click on Refresh button", action),
+                        encoding="utf-8",
+                    )
+                    result = generate_automation_scripts(
+                        client=None, suite_file=str(suite_file), plan_id=None, suite_id=None,
+                        project_dir=str(project_dir),
+                        namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+                    )
+                    content = Path(result["generated"][0]["file_path"]).read_text(encoding="utf-8")
+                    self.assertIn('await workflowPage.ClickButtonAsync("Export to Excel");', content)
+                    self.assertIn("await loginPage.LoginAsync(username, password);", content)
+
+    def test_export_case_without_translatable_click_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project_dir = root / "QA.Regression.Automation"
+            project_dir.mkdir()
+            suite_file = root / "suite.txt"
+            suite_file.write_text(
+                REFRESH_EXPORT.replace("Verify Refresh", "Verify Export")
+                .replace("Click on Refresh button", "Use the export control"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "31866.*without its download assertion"):
+                generate_automation_scripts(
+                    client=None, suite_file=str(suite_file), plan_id=None, suite_id=None,
+                    project_dir=str(project_dir),
+                    namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+                )
+
     def test_parse_suite_export_text_reads_steps(self):
         source = parse_suite_export_text(SUITE_EXPORT)
 
