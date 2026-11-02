@@ -8,6 +8,48 @@ namespace QA.Regression.Automation.Tests;
 [TestFixture]
 public class GeneratedWorkflowPageBrowserTests : BaseTest
 {
+    [TestCase("<a href='/export'>Export to Excel</a>")]
+    [TestCase("<a class='k-grid-excel' href='/export'><span>Export to Excel</span></a>")]
+    [TestCase("<a class='k-grid-excel' title='Export to Excel' href='/export'><span>Excel</span></a>")]
+    [TestCase("<button onclick=\"location.href='/export'\">Export to excel</button>")]
+    public async Task ExportToExcelClicksVisibleToolbarControlIgnoringHiddenDuplicates(string control)
+    {
+        const string pageUrl = "https://export-toolbar.example.test/";
+        var exportRequests = 0;
+        await Page.RouteAsync("https://export-toolbar.example.test/**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/export")
+            {
+                exportRequests++;
+                await route.FulfillAsync(new RouteFulfillOptions
+                {
+                    ContentType = "application/vnd.ms-excel",
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Content-Disposition"] = "attachment; filename=\"toolbar-report.xls\"",
+                    },
+                    Body = "exported rows",
+                });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                ContentType = "text/html",
+                Body = "<button style='display:none'>Export to Excel</button>"
+                    + "<a class='k-grid-excel' style='display:none'>Export to Excel</a>"
+                    + control,
+            });
+        });
+        await Page.GotoAsync(pageUrl);
+        await new GeneratedWorkflowPage(Page).ClickButtonAsync("Export to Excel");
+
+        Assert.That(exportRequests, Is.EqualTo(1));
+        Assert.That(
+            await Page.Locator("#automation-excel-download-evidence").InnerTextAsync(),
+            Does.Contain("toolbar-report.xls"));
+    }
+
     [TestCase("report.xlsx", "export data", true)]
     [TestCase("report.xls", "export data", true)]
     [TestCase("report.txt", "not Excel", false)]

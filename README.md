@@ -177,6 +177,8 @@ Clicking `Export to Excel` must produce a completed, non-empty `.xls` or `.xlsx`
 
 Manual steps such as `Click on 'Export to Excel' button` are translated into this download check. Generation fails explicitly if an export case cannot be translated into an `Export to Excel` click, rather than producing a test that silently omits the export. Successful exports also log the test name, downloaded filename, byte count, and evidence attachment confirmation.
 
+Export targeting includes visible links styled as toolbar buttons and Kendo Excel export controls, ignores hidden duplicates, and waits for normal Playwright click actionability. The log separately confirms the click and the verified download; no forced click or direct API download is used to bypass the UI.
+
 Each executed UI test attaches:
 
 - a Playwright trace `.zip`

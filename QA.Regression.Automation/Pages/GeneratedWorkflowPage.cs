@@ -101,8 +101,34 @@ public class GeneratedWorkflowPage
             return;
         }
 
+        var exportControl = _page.Locator(
+                "button, a, [role='button'], input[type='button'], input[type='submit']")
+            .Filter(new LocatorFilterOptions
+            {
+                Visible = true,
+                HasTextRegex = new System.Text.RegularExpressions.Regex(
+                    @"^\s*Export\s+to\s+Excel\s*$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            })
+            .Or(_page.Locator(
+                "a.k-grid-excel, button.k-grid-excel, " +
+                "input[value='Export to Excel' i], " +
+                "button[aria-label='Export to Excel' i], a[aria-label='Export to Excel' i]"))
+            .Filter(new LocatorFilterOptions { Visible = true })
+            .First;
+        await exportControl.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 60000,
+        });
+
         var download = await _page.RunAndWaitForDownloadAsync(
-            () => ClickControlAsync(buttonText),
+            async () =>
+            {
+                await exportControl.ClickAsync(new LocatorClickOptions { Timeout = 60000 });
+                TestContext.Progress.WriteLine(
+                    $"Test {TestContext.CurrentContext.Test.Name}: visible Export to Excel control clicked; waiting for download.");
+            },
             new PageRunAndWaitForDownloadOptions { Timeout = 60000 });
         var failure = await download.FailureAsync();
         Assert.That(failure, Is.Null, $"Excel export download failed: {failure}");
