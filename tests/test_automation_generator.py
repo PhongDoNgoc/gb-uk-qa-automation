@@ -259,6 +259,53 @@ class AutomationGeneratorTests(unittest.TestCase):
             content,
         )
 
+    def test_api_status_case_with_selectors_checks_the_pages_own_call_after_selecting(self):
+        steps_xml = """<steps id="0" last="5">
+<step id="2" type="ActionStep"><parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="3" type="ValidateStep"><parameterizedString isformatted="true">Open Utilities sub-menu and click to Diagnostics -&gt; History&lt;br&gt;URL @environment: baseURL/Diagnostics/History</parameterizedString><parameterizedString isformatted="true">User is navigated to History page</parameterizedString><description /></step>
+<step id="4" type="ActionStep"><parameterizedString isformatted="true">In 'Customer' selector, select @customer</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="5" type="ActionStep"><parameterizedString isformatted="true">In 'Site' selector, select @site</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="6" type="ValidateStep"><parameterizedString isformatted="true">Verify the GetAllDiagnosticsSessions API response status:&lt;br&gt;&amp;nbsp;Request URL: baseURL/Diagnostics/GetAllDiagnosticsSessions</parameterizedString><parameterizedString isformatted="true">Status Code should be 200 OK</parameterizedString><description /></step>
+</steps>"""
+        data_source = """<NewDataSet>
+<Table1><environment>dev</environment><customer>Office</customer><site>All</site></Table1>
+<Table1><environment>stage</environment><customer>Americold</customer><site>All</site></Table1>
+</NewDataSet>"""
+
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [{
+                    "id": "33987",
+                    "title": "Diagnostics - Verify GetAllDiagnosticsSessions API on Diagnostics - History page is working",
+                    "steps": steps_xml,
+                    "local_data_source": data_source,
+                }]
+
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td) / "QA.Regression.Automation"
+            project_dir.mkdir()
+            result = generate_automation_scripts(
+                client=FakeClient(), suite_file=None, plan_id=30985, suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+            )
+            entry = result["generated"][0]
+            content = Path(entry["file_path"]).read_text(encoding="utf-8")
+
+        self.assertEqual(entry["strategy"], "authenticated-api-status")
+        self.assertNotIn("GoToAndCaptureApiResponseStatusAsync", content)
+        ordered = [
+            "workflowPage.WatchApiCalls(apiPathFragment);",
+            "await workflowPage.GoToAsync(targetPageUrl);",
+            'SelectOptionAsync("Customer", TestEnvironmentSettings.ResolveEnvironmentSpecificValue('
+            'new Dictionary<string, string> { ["DEV"] = "Office", ["STAGE"] = "Americold", }));',
+            'SelectOptionAsync("Site", ',
+            "var actualStatusCode = await workflowPage.CaptureWatchedApiResponseStatusAsync();",
+            "Assert.That(actualStatusCode, Is.EqualTo(expectedStatusCode),",
+        ]
+        positions = [content.index(fragment) for fragment in ordered]
+        self.assertEqual(positions, sorted(positions))
+
     def test_navigation_menu_item_is_read_from_url_steps(self):
         for action, expected in (
             ("Open Utilities sub-menu and click to Portal Usage Report URL @environment : baseURL/PortalUsageReport",

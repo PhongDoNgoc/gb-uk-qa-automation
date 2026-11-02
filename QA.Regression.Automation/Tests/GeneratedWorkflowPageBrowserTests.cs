@@ -187,7 +187,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     {
         await Page.SetContentAsync(
             "<label for='period'>Period</label><select id='period'><option>05/2019</option><option>07/2019</option></select>");
-        var workflowPage = new GeneratedWorkflowPage(Page);
+        var workflowPage = new GeneratedWorkflowPage(Page) { SelectorOptionsTimeoutMs = 1000 };
 
         var exception = Assert.ThrowsAsync<InvalidOperationException>(
             () => workflowPage.SelectOptionAsync("Period", "06/2019"));
@@ -342,6 +342,88 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     public void ParseMonthYearAcceptsCommonMonthFormats(string value, int year, int month)
     {
         Assert.That(GeneratedWorkflowPage.ParseMonthYear(value), Is.EqualTo(new DateTime(year, month, 1)));
+    }
+
+    [Test]
+    public async Task CaptureWatchedApiResponseUsesThePagesOwnCallMadeAfterTheSelections()
+    {
+        await RouteDiagnosticsHistoryPageAsync("https://diagnostics.example.test/", callsApi: true);
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        workflowPage.WatchApiCalls("/Diagnostics/GetAllDiagnosticsSessions");
+        await workflowPage.GoToAsync("https://diagnostics.example.test/Diagnostics/History");
+        await workflowPage.SelectOptionAsync("Customer", "Americold");
+        await workflowPage.SelectOptionAsync("Site", "Dock 2");
+        var status = await workflowPage.CaptureWatchedApiResponseStatusAsync();
+
+        Assert.That(status, Is.EqualTo(200));
+        var evidence = await Page.Locator("#copilot-api-evidence-panel").InnerTextAsync();
+        Assert.That(evidence, Does.Contain("POST"));
+        Assert.That(evidence, Does.Contain("Customer = Americold; Site = Dock 2"));
+        Assert.That(evidence, Does.Contain("\"customer\": \"7\"").Or.Contain("\"customer\":\"7\""));
+        Assert.That(evidence, Does.Contain("\"site\": \"22\"").Or.Contain("\"site\":\"22\""));
+    }
+
+    [Test]
+    public async Task CaptureWatchedApiResponseFailsClearlyWhenThePageNeverCallsTheApi()
+    {
+        await RouteDiagnosticsHistoryPageAsync("https://diagnostics-silent.example.test/", callsApi: false);
+        var workflowPage = new GeneratedWorkflowPage(Page) { ApiCallTimeoutMs = 2000 };
+
+        workflowPage.WatchApiCalls("/Diagnostics/GetAllDiagnosticsSessions");
+        await workflowPage.GoToAsync("https://diagnostics-silent.example.test/Diagnostics/History");
+        await workflowPage.SelectOptionAsync("Customer", "Americold");
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(
+            () => workflowPage.CaptureWatchedApiResponseStatusAsync());
+        Assert.That(exception!.Message, Does.Contain("did not call '/Diagnostics/GetAllDiagnosticsSessions'"));
+        Assert.That(exception.Message, Does.Contain("Customer = Americold"));
+    }
+
+    // Mirrors diagnostics-history.js: customers load asynchronously, the sessions API only accepts POST,
+    // and the page re-posts the current filter on a refresh timer.
+    private async Task RouteDiagnosticsHistoryPageAsync(string origin, bool callsApi)
+    {
+        var page = """
+            <h2>Diagnostics</h2>
+            <div class='row'>
+              <div><span><b>Customer</b></span><select id='customer-dropdown'></select></div>
+              <div><span><b>Site</b></span><select id='site-dropdown'></select></div>
+            </div>
+            <table><tr><th>Session ID</th><th>Customer</th><th>Site</th></tr></table>
+            <script>
+              const callsApi = CALLS_API;
+              const filter = { customer: null, site: null };
+              const post = () => callsApi && fetch('/Diagnostics/GetAllDiagnosticsSessions', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(filter) });
+              post();
+              setTimeout(() => {
+                document.getElementById('customer-dropdown').innerHTML =
+                  "<option value='3'>ABP</option><option value='7'>Americold</option>";
+              }, 800);
+              document.getElementById('customer-dropdown').addEventListener('change', event => {
+                filter.customer = event.target.value;
+                filter.site = '-1';
+                document.getElementById('site-dropdown').innerHTML =
+                  "<option value='-1'>All</option><option value='21'>Dock 1</option><option value='22'>Dock 2</option>";
+              });
+              document.getElementById('site-dropdown').addEventListener('change', event => { filter.site = event.target.value; });
+              setInterval(() => { if (filter.customer !== null) post(); }, 1000);
+            </script>
+            """.Replace("CALLS_API", callsApi ? "true" : "false");
+
+        await Page.RouteAsync(origin + "**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/Diagnostics/GetAllDiagnosticsSessions")
+            {
+                await route.FulfillAsync(route.Request.Method == "POST"
+                    ? new RouteFulfillOptions { ContentType = "application/json", Body = route.Request.PostData ?? "null" }
+                    : new RouteFulfillOptions { Status = 405 });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions { ContentType = "text/html", Body = page });
+        });
     }
 
     private async Task RouteExportPageAsync(string pageUrl, string body)

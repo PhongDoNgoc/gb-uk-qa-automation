@@ -529,8 +529,22 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
     api_path_fragment = ""
     api_path_values_by_environment: dict[str, str] = {}
     expected_status_code = 200
+    selection_lines: list[str] = []
 
     for step in test_case.steps:
+        selection = _extract_selection(step.action)
+        if selection:
+            label, value = selection
+            selection_lines.append(
+                f'await workflowPage.SelectOptionAsync("{_escape_csharp_string(label)}", '
+                f"{_build_selection_value_expression(test_case, step.index, label, value)});"
+            )
+        elif _looks_like_selection_step(step.action):
+            raise ValueError(
+                f"Test case {test_case.test_case_id} step {step.index}: selector step could not be generated: "
+                f"'{step.action}'. Use a step such as: In 'Customer' selector, select @customer."
+            )
+
         if not page_path:
             page_path = _extract_baseurl_reference(
                 step.action,
@@ -602,7 +616,25 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
             '    "Welcome to your ViewPoint energy portal"),',
             '    "The expected home page welcome message was not displayed after sign in.");',
             "",
-            "var actualStatusCode = await workflowPage.GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment);",
+        ]
+    )
+    if selection_lines:
+        # The page must make the call itself after the selections; it may use a method or body
+        # (for example POST) that a standalone GET to the API URL would not reproduce.
+        lines.extend(
+            [
+                "workflowPage.WatchApiCalls(apiPathFragment);",
+                "await workflowPage.GoToAsync(targetPageUrl);",
+                *selection_lines,
+                "var actualStatusCode = await workflowPage.CaptureWatchedApiResponseStatusAsync();",
+            ]
+        )
+    else:
+        lines.append(
+            "var actualStatusCode = await workflowPage.GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment);"
+        )
+    lines.extend(
+        [
             "Assert.That(actualStatusCode, Is.EqualTo(expectedStatusCode),",
             f'    "Expected {api_display_name} to return HTTP status {expected_status_code} after sign in.");',
         ]

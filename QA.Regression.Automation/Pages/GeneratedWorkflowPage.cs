@@ -18,6 +18,12 @@ public class GeneratedWorkflowPage
     internal int ExportReadyTimeoutMs { get; init; } = 120000;
     internal int ExportDownloadTimeoutMs { get; init; } = 120000;
     internal int DataSettleTimeoutMs { get; init; } = 60000;
+    internal int ApiCallTimeoutMs { get; init; } = 45000;
+    internal int SelectorOptionsTimeoutMs { get; init; } = 30000;
+
+    private readonly List<string> _appliedSelections = new();
+    private int _selectionCount;
+    private ApiCallWatch? _apiWatch;
 
     // Kendo's DataSource sets _requestInProgress while a read is queued or running; exporting while it is set
     // queues the all-pages export read behind the reload and the download never starts.
@@ -135,6 +141,137 @@ public class GeneratedWorkflowPage
         await RenderApiEvidencePanelAsync(capture);
         await AttachApiEvidenceScreenshotAsync();
         return capture.StatusCode;
+    }
+
+    // Records the page's own calls to the API so the check can use the call made after the Test Case's
+    // selections. The page may send it with a method or body that a standalone GET cannot reproduce.
+    public void WatchApiCalls(string apiPathFragment)
+    {
+        if (string.IsNullOrWhiteSpace(apiPathFragment))
+        {
+            throw new ArgumentException("API path fragment must be provided.", nameof(apiPathFragment));
+        }
+
+        StopWatchingApiCalls();
+        var normalizedApiPath = NormalizeApiPathFragment(apiPathFragment);
+        var watchedPath = Uri.TryCreate(apiPathFragment.Trim(), UriKind.Absolute, out var absoluteUri) && IsHttpUri(absoluteUri)
+            ? absoluteUri.AbsolutePath
+            : normalizedApiPath.Split('?', '#')[0];
+        var watch = new ApiCallWatch(watchedPath.TrimEnd('/'));
+        watch.Handler = (_, request) =>
+        {
+            if (Uri.TryCreate(request.Url, UriKind.Absolute, out var requestUri)
+                && requestUri.AbsolutePath.TrimEnd('/').EndsWith(watch.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                lock (watch.Calls)
+                {
+                    watch.Calls.Add((request, Volatile.Read(ref _selectionCount)));
+                }
+            }
+        };
+        _page.Request += watch.Handler;
+        _apiWatch = watch;
+    }
+
+    public async Task<int> CaptureWatchedApiResponseStatusAsync()
+    {
+        var watch = _apiWatch ?? throw new InvalidOperationException(
+            "Call WatchApiCalls before CaptureWatchedApiResponseStatusAsync.");
+        try
+        {
+            var selectionCount = Volatile.Read(ref _selectionCount);
+            var selections = string.Join("; ", _appliedSelections);
+            var request = await WaitForWatchedCallAsync(watch, selectionCount, ApiCallTimeoutMs);
+            if (request is null && selectionCount > 1)
+            {
+                request = LatestWatchedCall(watch, 1);
+                if (request is not null)
+                {
+                    TestContext.Progress.WriteLine(
+                        $"WARNING: Test {TestContext.CurrentContext.Test.Name}: the page did not call '{watch.Path}' again " +
+                        $"within {ApiCallTimeoutMs} ms after the last selection; using the call made after an earlier selection ({selections}).");
+                }
+            }
+
+            if (request is null)
+            {
+                int earlierCalls;
+                lock (watch.Calls)
+                {
+                    earlierCalls = watch.Calls.Count;
+                }
+
+                var after = selectionCount > 0 ? $"after selecting {selections}" : "after opening the page";
+                throw new InvalidOperationException(
+                    $"The page did not call '{watch.Path}' within {ApiCallTimeoutMs} ms {after} on '{_page.Url}'. " +
+                    $"Calls seen before that point: {earlierCalls}. Check the Test Case selections and API URL.");
+            }
+
+            var response = await request.ResponseAsync().WaitAsync(TimeSpan.FromMilliseconds(ApiCallTimeoutMs))
+                ?? throw new InvalidOperationException(
+                    $"The page's {request.Method} call to '{request.Url}' failed without a response: {request.Failure ?? "unknown error"}.");
+            string responseBody;
+            try
+            {
+                responseBody = await response.TextAsync();
+            }
+            catch (PlaywrightException exception)
+            {
+                responseBody = $"<response body unavailable: {exception.Message}>";
+            }
+
+            TestContext.Progress.WriteLine(
+                $"Test {TestContext.CurrentContext.Test.Name}: page called {request.Method} {request.Url} " +
+                $"{(selectionCount > 0 ? $"after selecting {selections} " : string.Empty)}and received HTTP {response.Status}.");
+
+            await _page.WaitForTimeoutAsync(500);
+            var capture = new ApiResponseCapture(
+                response.Status,
+                request.Url,
+                responseBody,
+                request.Method,
+                selectionCount > 0 ? selections : null);
+            await RenderApiEvidencePanelAsync(capture);
+            await AttachApiEvidenceScreenshotAsync();
+            return capture.StatusCode;
+        }
+        finally
+        {
+            StopWatchingApiCalls();
+        }
+    }
+
+    private static async Task<IRequest?> WaitForWatchedCallAsync(ApiCallWatch watch, int minimumSelectionCount, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (true)
+        {
+            var request = LatestWatchedCall(watch, minimumSelectionCount);
+            if (request is not null || DateTime.UtcNow >= deadline)
+            {
+                return request;
+            }
+
+            await Task.Delay(250);
+        }
+    }
+
+    private static IRequest? LatestWatchedCall(ApiCallWatch watch, int minimumSelectionCount)
+    {
+        lock (watch.Calls)
+        {
+            return watch.Calls.LastOrDefault(call => call.SelectionCount >= minimumSelectionCount).Request;
+        }
+    }
+
+    private void StopWatchingApiCalls()
+    {
+        if (_apiWatch?.Handler is { } handler)
+        {
+            _page.Request -= handler;
+        }
+
+        _apiWatch = null;
     }
 
     public async Task FillCredentialInputsAsync(string username, string password)
@@ -426,6 +563,8 @@ public class GeneratedWorkflowPage
                 $"Selecting '{optionText}' in the '{fieldLabel}' selector did not update the control on page '{_page.Url}'.");
         }
 
+        _appliedSelections.Add($"{fieldLabel} = {optionText}");
+        Interlocked.Increment(ref _selectionCount);
         TestContext.Progress.WriteLine(
             $"Test {TestContext.CurrentContext.Test.Name}: selected '{optionText}' in '{fieldLabel}' selector.");
         await WaitForSelectionDataSettledAsync(fieldLabel);
@@ -636,19 +775,33 @@ public class GeneratedWorkflowPage
 
     private async Task SelectNativeOptionAsync(ILocator control, string fieldLabel, string optionText)
     {
-        var options = await control.EvaluateAsync<string[][]>(
-            "select => Array.from(select.options).map(option => [option.value, option.textContent.trim()])");
-        var index = ChooseOptionIndex(options.Select(option => option[1]).ToList(), optionText);
-        if (index < 0)
+        // Options are often filled by an AJAX call after the page loads, so keep checking until the option appears.
+        var deadline = DateTime.UtcNow.AddMilliseconds(SelectorOptionsTimeoutMs);
+        string[][] options;
+        int index;
+        while (true)
         {
-            index = ChooseOptionIndex(options.Select(option => option[0]).ToList(), optionText);
+            options = await control.EvaluateAsync<string[][]>(
+                "select => Array.from(select.options).map(option => [option.value, option.textContent.trim()])");
+            index = ChooseOptionIndex(options.Select(option => option[1]).ToList(), optionText);
+            if (index < 0)
+            {
+                index = ChooseOptionIndex(options.Select(option => option[0]).ToList(), optionText);
+            }
+
+            if (index >= 0 || DateTime.UtcNow >= deadline)
+            {
+                break;
+            }
+
+            await Task.Delay(250);
         }
 
         if (index < 0)
         {
             throw new InvalidOperationException(
-                $"Option '{optionText}' was not found in the '{fieldLabel}' selector. " +
-                $"Available options: {string.Join(", ", options.Select(option => $"'{option[1]}'"))}.");
+                $"Option '{optionText}' was not found in the '{fieldLabel}' selector within {SelectorOptionsTimeoutMs} ms. " +
+                $"Available options: {(options.Length == 0 ? "none" : string.Join(", ", options.Select(option => $"'{option[1]}'")))}.");
         }
 
         await control.SelectOptionAsync(new SelectOptionValue { Index = index });
@@ -1357,7 +1510,7 @@ public class GeneratedWorkflowPage
     {
         var responsePreview = BuildResponsePreview(capture.ResponseBody);
         await _page.EvaluateAsync(
-            @"({ requestUrl, statusCode, responsePreview }) => {
+            @"({ requestUrl, statusCode, responsePreview, method, selections }) => {
                 const panelId = 'copilot-api-evidence-panel';
                 let panel = document.getElementById(panelId);
                 if (!panel) {
@@ -1382,6 +1535,11 @@ public class GeneratedWorkflowPage
                 }
 
                 panel.innerHTML = '';
+                if (selections) {
+                    // Keep the filters at the top of the page visible in the screenshot.
+                    panel.style.top = 'auto';
+                    panel.style.bottom = '48px';
+                }
 
                 const title = document.createElement('div');
                 title.textContent = 'API evidence';
@@ -1396,6 +1554,17 @@ public class GeneratedWorkflowPage
                 status.style.color = statusCode >= 200 && statusCode < 400 ? '#166534' : '#b91c1c';
                 status.style.marginBottom = '8px';
                 panel.appendChild(status);
+
+                const addLine = (label, value) => {
+                    const line = document.createElement('div');
+                    line.textContent = `${label}: ${value}`;
+                    line.style.marginBottom = '8px';
+                    line.style.whiteSpace = 'pre-wrap';
+                    line.style.wordBreak = 'break-word';
+                    panel.appendChild(line);
+                };
+                if (method) addLine('Method', `${method} (sent by the page)`);
+                if (selections) addLine('Selected before the call', selections);
 
                 const requestLabel = document.createElement('div');
                 requestLabel.textContent = 'Request URL:';
@@ -1428,6 +1597,8 @@ public class GeneratedWorkflowPage
                 requestUrl = capture.RequestUrl,
                 statusCode = capture.StatusCode,
                 responsePreview = responsePreview,
+                method = capture.Method,
+                selections = capture.Selections,
             }
         );
     }
@@ -1544,5 +1715,17 @@ public class GeneratedWorkflowPage
         }
     }
 
-    private sealed record ApiResponseCapture(int StatusCode, string RequestUrl, string ResponseBody);
+    private sealed record ApiResponseCapture(
+        int StatusCode,
+        string RequestUrl,
+        string ResponseBody,
+        string? Method = null,
+        string? Selections = null);
+
+    private sealed class ApiCallWatch(string path)
+    {
+        public string Path { get; } = path;
+        public List<(IRequest Request, int SelectionCount)> Calls { get; } = new();
+        public EventHandler<IRequest>? Handler { get; set; }
+    }
 }
