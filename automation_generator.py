@@ -491,7 +491,19 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
             lines.append("await workflowPage.FillCredentialInputsAsync(username, password);")
 
         click_target = _extract_click_target(step.action)
-        if click_target:
+        selection = _extract_selection(step.action)
+        if selection:
+            label, value = selection
+            lines.append(
+                f'await workflowPage.SelectOptionAsync("{_escape_csharp_string(label)}", '
+                f"{_build_selection_value_expression(test_case, step.index, label, value)});"
+            )
+        elif _looks_like_selection_step(step.action):
+            raise ValueError(
+                f"Test case {test_case.test_case_id} step {step.index}: selector step could not be generated: "
+                f"'{step.action}'. Use a step such as: In 'Country' selector, select @country."
+            )
+        elif click_target:
             lines.append(f'await workflowPage.ClickButtonAsync("{_escape_csharp_string(click_target)}");')
 
         expected_texts = _extract_expected_texts(step.expected)
@@ -781,6 +793,79 @@ def _extract_click_target(value: str) -> str:
     if re.fullmatch(r"export\s+to\s+excel", target, re.I):
         return "Export to Excel"
     return target
+
+
+_QUOTE = "'\"\u2018\u2019\u201c\u201d"
+_SELECTOR_NOUN = r"(?:selector|dropdown|drop-down|drop\s+down|filter|picker)"
+_SELECTION_PATTERNS = (
+    re.compile(
+        rf"\bin\s+(?:the\s+)?(?:[{_QUOTE}](?P<quoted_label>[^{_QUOTE}]+)[{_QUOTE}]|(?P<label>[A-Za-z0-9 /_-]+?))"
+        rf"\s+{_SELECTOR_NOUN}\s*,?\s*(?:select|choose)\s+(?:an?\s+|the\s+)?(?P<value>.+?)\s*[.!]?\s*$",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:select|choose)\s+(?:an?\s+|the\s+)?(?P<value>.+?)\s+(?:in|from)\s+(?:the\s+)?"
+        rf"(?:[{_QUOTE}](?P<quoted_label>[^{_QUOTE}]+)[{_QUOTE}]|(?P<label>[A-Za-z0-9 /_-]+?))"
+        rf"\s+{_SELECTOR_NOUN}\s*[.!]?\s*$",
+        re.I,
+    ),
+)
+
+
+def _extract_selection(value: str) -> tuple[str, str] | None:
+    text = re.sub(r"\s+", " ", value).strip()
+    for pattern in _SELECTION_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        label = (match.group("quoted_label") or match.group("label") or "").strip()
+        selected = match.group("value").strip().strip(_QUOTE).strip()
+        if label and selected:
+            return label, selected
+    return None
+
+
+def _looks_like_selection_step(value: str) -> bool:
+    return (
+        re.search(r"\b(?:select|choose)\b", value, re.I) is not None
+        and re.search(rf"\b{_SELECTOR_NOUN}\b", value, re.I) is not None
+    )
+
+
+def _build_selection_value_expression(test_case: SuiteTestCase, step_index: int, label: str, value: str) -> str:
+    parameter = re.fullmatch(r"@([A-Za-z0-9_]+)", value)
+    if not parameter:
+        return f'"{_escape_csharp_string(value)}"'
+
+    name = parameter.group(1)
+    context = f"Test case {test_case.test_case_id} step {step_index} ('{label}' selector)"
+    if not _has_environment_parameter_rows(test_case.parameter_rows):
+        resolved = _get_case_insensitive_value(test_case.parameter_values, name)
+        if not resolved:
+            raise ValueError(f"{context}: parameter '@{name}' has no value in the test case parameter data.")
+        return f'"{_escape_csharp_string(resolved)}"'
+
+    values_by_environment: dict[str, str] = {}
+    for row in test_case.parameter_rows:
+        environment_value = _get_case_insensitive_value(row, "Environment") or ""
+        environment = re.sub(r"[^A-Za-z0-9]+", "_", environment_value.strip()).strip("_").upper()
+        if not environment:
+            raise ValueError(f"{context}: parameter rows must include a non-empty 'Environment' value.")
+        resolved = (_get_case_insensitive_value(row, name) or "").strip()
+        if resolved:
+            values_by_environment[environment] = resolved
+
+    if not values_by_environment:
+        raise ValueError(f"{context}: parameter '@{name}' has no value for any environment in the test case parameter data.")
+
+    entries = " ".join(
+        f'["{_escape_csharp_string(environment)}"] = "{_escape_csharp_string(resolved)}",'
+        for environment, resolved in sorted(values_by_environment.items())
+    )
+    return (
+        "TestEnvironmentSettings.ResolveEnvironmentSpecificValue("
+        f"new Dictionary<string, string> {{ {entries} }})"
+    )
 
 
 def _extract_expected_texts(value: str) -> list[str]:

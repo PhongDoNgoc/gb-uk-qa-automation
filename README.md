@@ -179,6 +179,8 @@ Manual steps such as `Click on 'Export to Excel' button` are translated into thi
 
 Export targeting includes visible links styled as toolbar buttons and Kendo Excel export controls, ignores hidden duplicates, and waits for normal Playwright click actionability. The log separately confirms the click and the verified download; no forced click or direct API download is used to bypass the UI.
 
+Selector steps that choose data before exporting are translated into `SelectOptionAsync` calls. Supported wording includes `In 'Country' selector, select @country` and `Select a @date in Select Date selector`; `dropdown`, `filter` and `picker` can replace `selector`, and literal quoted values are also supported. `@parameter` values come from the Test Case parameter table, using the row whose `environment` matches `TEST_TARGET_ENV`. A blank value for the target environment fails the test with a clear message instead of exporting unfiltered data. The control is found by its label, accessible name or nearby label text and may be a native select, a Kendo-style dropdown or a text/date input. An exact option match is preferred; otherwise, a single whole-word match such as `GB` in `United Kingdom (GB)` is accepted. If the option is missing, the error lists the available options. Generation fails if a selector step cannot be translated.
+
 Each executed UI test attaches:
 
 - a Playwright trace `.zip`

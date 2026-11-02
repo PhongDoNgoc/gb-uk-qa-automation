@@ -115,6 +115,94 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     }
 
     [Test]
+    public async Task SelectOptionAsyncSetsLabelledFiltersBeforeExportBecomesAvailable()
+    {
+        const string pageUrl = "https://filters.example.test/";
+        await Page.RouteAsync("https://filters.example.test/**", async route =>
+        {
+            if (new Uri(route.Request.Url).AbsolutePath == "/export")
+            {
+                await route.FulfillAsync(new RouteFulfillOptions
+                {
+                    ContentType = "application/vnd.ms-excel",
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Content-Disposition"] = "attachment; filename=\"filtered.xlsx\"",
+                    },
+                    Body = "filtered rows",
+                });
+                return;
+            }
+
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                ContentType = "text/html",
+                Body = """
+                    <table><tr><th>Country</th></tr></table>
+                    <label for='country'>Country:</label>
+                    <select id='country' onchange='refresh()'>
+                        <option value=''>Choose</option><option value='FR'>France (FR)</option><option value='GB'>United Kingdom (GB)</option>
+                    </select>
+                    <div class='row'><div><span>Energy Service</span></div>
+                        <div><span class='k-dropdown' role='combobox' tabindex='0'
+                            onclick="document.getElementById('services').style.display='block'"><span id='service'>Select</span></span></div></div>
+                    <ul id='services' role='listbox' style='display:none'>
+                        <li role='option' onclick="pick('Electricity')">Electricity</li><li role='option' onclick="pick('All')">All</li>
+                    </ul>
+                    <div><div>Select Date</div><div><input id='date' type='text' onchange='refresh()'></div></div>
+                    <div id='toolbar'></div>
+                    <script>
+                        function pick(value) {
+                            document.getElementById('service').textContent = value;
+                            document.getElementById('services').style.display = 'none';
+                            refresh();
+                        }
+                        function refresh() {
+                            const ready = document.getElementById('country').value === 'GB'
+                                && document.getElementById('service').textContent === 'All'
+                                && document.getElementById('date').value === 'Jan-2026';
+                            document.getElementById('toolbar').innerHTML = ready
+                                ? "<a class='k-grid-excel' href='/export'>Export to Excel</a>" : '';
+                        }
+                    </script>
+                    """,
+            });
+        });
+        await Page.GotoAsync(pageUrl);
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await workflowPage.SelectOptionAsync("Country", "GB");
+        await workflowPage.SelectOptionAsync("Energy Service", "All");
+        await workflowPage.SelectOptionAsync("Select Date", "Jan-2026");
+        await workflowPage.ClickButtonAsync("Export to Excel");
+
+        Assert.That(await Page.Locator("#country").InputValueAsync(), Is.EqualTo("GB"));
+        Assert.That(
+            await Page.Locator("#automation-excel-download-evidence").InnerTextAsync(),
+            Does.Contain("filtered.xlsx"));
+    }
+
+    [Test]
+    public async Task SelectOptionAsyncReportsAvailableOptionsWhenValueIsMissing()
+    {
+        await Page.SetContentAsync(
+            "<label for='period'>Period</label><select id='period'><option>05/2019</option><option>07/2019</option></select>");
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(
+            () => workflowPage.SelectOptionAsync("Period", "06/2019"));
+        Assert.That(exception!.Message, Does.Contain("'05/2019', '07/2019'"));
+    }
+
+    [TestCase(new[] { "GB", "United Kingdom (GB)" }, "gb", 0)]
+    [TestCase(new[] { "France (FR)", "United Kingdom (GB)" }, "GB", 1)]
+    [TestCase(new[] { "All services", "All issues" }, "All", -1)]
+    public void ChooseOptionIndexPrefersExactThenUniqueWordMatch(string[] options, string wanted, int expected)
+    {
+        Assert.That(GeneratedWorkflowPage.ChooseOptionIndex(options, wanted), Is.EqualTo(expected));
+    }
+
+    [Test]
     public async Task GoToAsyncDoesNotWaitForNetworkIdleWhenPageHasContinuousRequests()
     {
         const string pageUrl = "https://payment-availability.example.test/PaymentAvailability/PaymentAvailabilityIndex";

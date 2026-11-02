@@ -191,6 +191,301 @@ public class GeneratedWorkflowPage
             "Excel file and Excel download evidence screenshot attached.");
     }
 
+    public async Task SelectOptionAsync(string fieldLabel, string optionText)
+    {
+        if (string.IsNullOrWhiteSpace(fieldLabel))
+        {
+            throw new ArgumentException("Selector label must be provided.", nameof(fieldLabel));
+        }
+
+        if (string.IsNullOrWhiteSpace(optionText))
+        {
+            throw new ArgumentException(
+                $"No value was provided for the '{fieldLabel}' selector. Check the Test Case parameter data.",
+                nameof(optionText));
+        }
+
+        var control = await FindLabelledControlAsync(fieldLabel);
+        await control.ScrollIntoViewIfNeededAsync();
+        var kind = await control.EvaluateAsync<string>(
+            "el => el.tagName === 'SELECT' ? 'select' : (el.matches('input, textarea') ? 'input' : 'dropdown')");
+
+        switch (kind)
+        {
+            case "select":
+                await SelectNativeOptionAsync(control, fieldLabel, optionText);
+                break;
+            case "input":
+                await FillSelectorInputAsync(control, optionText);
+                break;
+            default:
+                await SelectDropdownOptionAsync(control, fieldLabel, optionText);
+                break;
+        }
+
+        if (!await IsSelectionAppliedAsync(control, optionText))
+        {
+            throw new InvalidOperationException(
+                $"Selecting '{optionText}' in the '{fieldLabel}' selector did not update the control on page '{_page.Url}'.");
+        }
+
+        TestContext.Progress.WriteLine(
+            $"Test {TestContext.CurrentContext.Test.Name}: selected '{optionText}' in '{fieldLabel}' selector.");
+    }
+
+    private async Task<ILocator> FindLabelledControlAsync(string fieldLabel)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        try
+        {
+            await _page.WaitForFunctionAsync(
+                """
+                ({ label, token }) => {
+                    const norm = value => (value || '').replace(/[:*]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+                    const wanted = norm(label);
+                    const bare = wanted.replace(/^select\s+/, '');
+                    const names = new Set([wanted, bare, `select ${bare}`]);
+                    const isVisible = element => {
+                        if (!element) return false;
+                        const style = window.getComputedStyle(element);
+                        const bounds = element.getBoundingClientRect();
+                        return style.display !== 'none' && style.visibility !== 'hidden'
+                            && bounds.width > 0 && bounds.height > 0;
+                    };
+                    const wrapperSelector = '.k-dropdownlist, .k-dropdown, .k-combobox, .k-datepicker, '
+                        + '.k-datetimepicker, .k-dateinput, .k-multiselect, .k-picker';
+                    const controlSelector = `${wrapperSelector}, [role="combobox"], [role="listbox"], select, textarea, `
+                        + 'input:not([type="hidden"]):not([type="button"]):not([type="submit"])'
+                        + ':not([type="checkbox"]):not([type="radio"])';
+                    const promote = element => {
+                        if (!element || element.closest('#automation-excel-download-evidence')) return null;
+                        const wrapper = element.closest(wrapperSelector);
+                        const candidate = wrapper && isVisible(wrapper) ? wrapper : element;
+                        if (!isVisible(candidate)) return null;
+                        if (candidate.matches('.k-datepicker, .k-datetimepicker, .k-dateinput, .k-combobox')) {
+                            const input = candidate.querySelector('input:not([type="hidden"])');
+                            if (isVisible(input)) return input;
+                        }
+                        return candidate;
+                    };
+                    const firstControlIn = root => {
+                        if (root.matches(controlSelector)) {
+                            const promoted = promote(root);
+                            if (promoted) return promoted;
+                        }
+                        for (const element of root.querySelectorAll(controlSelector)) {
+                            const promoted = promote(element);
+                            if (promoted) return promoted;
+                        }
+                        return null;
+                    };
+                    const mark = element => {
+                        element.setAttribute('data-automation-selector', token);
+                        return true;
+                    };
+
+                    for (const element of document.querySelectorAll(controlSelector)) {
+                        const accessibleName = [element.getAttribute('aria-label'), element.getAttribute('title'),
+                            element.getAttribute('placeholder')].map(norm);
+                        if (accessibleName.some(name => names.has(name))) {
+                            const promoted = promote(element);
+                            if (promoted) return mark(promoted);
+                        }
+                    }
+
+                    const textElements = Array.from(document.querySelectorAll(
+                        'label, span, div, td, th, p, strong, b, legend, dt, h1, h2, h3, h4, h5, h6'))
+                        .filter(element => names.has(norm(element.textContent))
+                            && !Array.from(element.children).some(child => names.has(norm(child.textContent))))
+                        .sort((left, right) => (right.tagName === 'LABEL') - (left.tagName === 'LABEL'));
+                    for (const element of textElements) {
+                        const forId = element.tagName === 'LABEL' ? element.getAttribute('for') : null;
+                        const linked = forId ? promote(document.getElementById(forId)) : null;
+                        if (linked) return mark(linked);
+
+                        const owningWrapper = element.closest(wrapperSelector);
+                        if (owningWrapper && isVisible(owningWrapper)) return mark(promote(owningWrapper));
+
+                        let node = element;
+                        for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+                            for (let sibling = node.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+                                const control = firstControlIn(sibling);
+                                if (control) return mark(control);
+                            }
+                        }
+                    }
+                    return false;
+                }
+                """,
+                new { label = fieldLabel, token },
+                new PageWaitForFunctionOptions { Timeout = 30000, PollingInterval = 250 });
+        }
+        catch (TimeoutException)
+        {
+            throw new TimeoutException(
+                $"Timeout 30000ms exceeded while waiting for a visible '{fieldLabel}' selector on page '{_page.Url}'.");
+        }
+
+        return _page.Locator($"[data-automation-selector='{token}']");
+    }
+
+    private async Task SelectNativeOptionAsync(ILocator control, string fieldLabel, string optionText)
+    {
+        var options = await control.EvaluateAsync<string[][]>(
+            "select => Array.from(select.options).map(option => [option.value, option.textContent.trim()])");
+        var index = ChooseOptionIndex(options.Select(option => option[1]).ToList(), optionText);
+        if (index < 0)
+        {
+            index = ChooseOptionIndex(options.Select(option => option[0]).ToList(), optionText);
+        }
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Option '{optionText}' was not found in the '{fieldLabel}' selector. " +
+                $"Available options: {string.Join(", ", options.Select(option => $"'{option[1]}'"))}.");
+        }
+
+        await control.SelectOptionAsync(new SelectOptionValue { Index = index });
+    }
+
+    private async Task FillSelectorInputAsync(ILocator control, string optionText)
+    {
+        await control.ClickAsync();
+        await control.FillAsync(optionText);
+        await control.PressAsync("Tab");
+        await control.EvaluateAsync(
+            """
+            (input, value) => {
+                const widget = window.kendo && window.jQuery ? window.kendo.widgetInstance(window.jQuery(input)) : null;
+                if (widget && typeof widget.value === 'function' && !widget.value()) {
+                    widget.value(value);
+                    widget.trigger('change');
+                }
+            }
+            """,
+            optionText);
+    }
+
+    private async Task SelectDropdownOptionAsync(ILocator control, string fieldLabel, string optionText)
+    {
+        await control.ClickAsync();
+        var options = _page.Locator(
+                "[role='option'], .k-list .k-item, .k-list-item, .k-list-ul > li, .dropdown-menu .dropdown-item")
+            .Filter(new LocatorFilterOptions { Visible = true });
+        try
+        {
+            await options.First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 10000,
+            });
+        }
+        catch (TimeoutException)
+        {
+            if (await TrySelectKendoValueAsync(control, optionText))
+            {
+                return;
+            }
+
+            throw new TimeoutException(
+                $"Timeout 10000ms exceeded while waiting for the '{fieldLabel}' selector options on page '{_page.Url}'.");
+        }
+
+        var texts = await options.AllInnerTextsAsync();
+        var index = ChooseOptionIndex(texts, optionText);
+        if (index >= 0)
+        {
+            await options.Nth(index).ClickAsync();
+            return;
+        }
+
+        await _page.Keyboard.PressAsync("Escape");
+        if (await TrySelectKendoValueAsync(control, optionText))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Option '{optionText}' was not found in the '{fieldLabel}' selector. " +
+            $"Available options: {string.Join(", ", texts.Select(text => $"'{text.Trim()}'"))}.");
+    }
+
+    private async Task<bool> TrySelectKendoValueAsync(ILocator control, string optionText)
+    {
+        return await control.EvaluateAsync<bool>(
+            """
+            (wrapper, value) => {
+                if (!window.kendo || !window.jQuery) return false;
+                const norm = text => String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const wanted = norm(value);
+                for (const element of [wrapper, ...wrapper.querySelectorAll('select, input')]) {
+                    const widget = window.kendo.widgetInstance(window.jQuery(element));
+                    if (!widget || !widget.dataSource) continue;
+                    const textField = widget.options.dataTextField;
+                    const valueField = widget.options.dataValueField;
+                    const item = widget.dataSource.view().find(dataItem => {
+                        const text = typeof dataItem === 'object' && textField ? dataItem[textField] : dataItem;
+                        const itemValue = typeof dataItem === 'object' && valueField ? dataItem[valueField] : dataItem;
+                        return norm(text) === wanted || norm(itemValue) === wanted;
+                    });
+                    if (!item) continue;
+                    widget.value(typeof item === 'object' && valueField ? item[valueField] : item);
+                    widget.trigger('change');
+                    return true;
+                }
+                return false;
+            }
+            """,
+            optionText);
+    }
+
+    private static async Task<bool> IsSelectionAppliedAsync(ILocator control, string optionText)
+    {
+        return await control.EvaluateAsync<bool>(
+            """
+            (element, value) => {
+                const norm = text => String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const wanted = norm(value);
+                if (element.tagName === 'SELECT') {
+                    const option = element.selectedOptions[0];
+                    return !!option && (norm(option.textContent).includes(wanted) || norm(option.value) === wanted);
+                }
+                if (element.matches('input, textarea')) {
+                    const widget = window.kendo && window.jQuery ? window.kendo.widgetInstance(window.jQuery(element)) : null;
+                    return norm(element.value) === wanted || !!(widget && widget.value && widget.value());
+                }
+                return norm(element.innerText || element.textContent).includes(wanted)
+                    || Array.from(element.querySelectorAll('input, select')).some(input => norm(input.value) === wanted);
+            }
+            """,
+            optionText);
+    }
+
+    internal static int ChooseOptionIndex(IReadOnlyList<string> optionTexts, string wanted)
+    {
+        static string Normalize(string value) =>
+            System.Text.RegularExpressions.Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
+
+        var normalizedWanted = Normalize(wanted);
+        for (var index = 0; index < optionTexts.Count; index++)
+        {
+            if (Normalize(optionTexts[index]).Equals(normalizedWanted, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        var wordMatch = new System.Text.RegularExpressions.Regex(
+            $@"(^|[^A-Za-z0-9]){System.Text.RegularExpressions.Regex.Escape(normalizedWanted)}($|[^A-Za-z0-9])",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var partialMatches = optionTexts
+            .Select((text, index) => (text, index))
+            .Where(option => wordMatch.IsMatch(Normalize(option.text)))
+            .ToList();
+        return partialMatches.Count == 1 ? partialMatches[0].index : -1;
+    }
+
     private async Task ClickControlAsync(string buttonText)
     {
         if (buttonText.Equals("Refresh", StringComparison.OrdinalIgnoreCase))

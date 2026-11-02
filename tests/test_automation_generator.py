@@ -207,6 +207,87 @@ class AutomationGeneratorTests(unittest.TestCase):
                     namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
                 )
 
+    def test_export_cases_select_environment_specific_parameter_values_before_export(self):
+        steps_xml = """<steps id="0" last="5">
+<step id="2" type="ActionStep"><parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="3" type="ValidateStep"><parameterizedString isformatted="true">Open Utilities sub-menu and click to Payment Availability&lt;br&gt;URL @environment: baseURL/PaymentAvailability/PaymentAvailabilityIndex</parameterizedString><parameterizedString isformatted="true">User is navigated to Payment Availability page</parameterizedString><description /></step>
+<step id="4" type="ActionStep"><parameterizedString isformatted="true">In 'Country' selector, select @country</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="5" type="ActionStep"><parameterizedString isformatted="true">In  'Select Issue Type' selector, select @issuetype</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="6" type="ActionStep"><parameterizedString isformatted="true">Select a @date in Select Date selector</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>
+<step id="7" type="ValidateStep"><parameterizedString isformatted="true">Click on 'Export to Excel' button</parameterizedString><parameterizedString isformatted="true">File should be downloaded successfully with correct data</parameterizedString><description /></step>
+</steps>"""
+        data_source = """<NewDataSet>
+<Table1><environment>dev</environment><country></country><issuetype></issuetype><date>Feb-2026</date></Table1>
+<Table1><environment>stage</environment><country>GB</country><issuetype>All</issuetype><date>Jan-2026</date></Table1>
+</NewDataSet>"""
+
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [{
+                    "id": "31857",
+                    "title": "Payment Availability - Verify 'Export to Excel' in Payment Availability page is working",
+                    "steps": steps_xml,
+                    "local_data_source": data_source,
+                }]
+
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td) / "QA.Regression.Automation"
+            project_dir.mkdir()
+            result = generate_automation_scripts(
+                client=FakeClient(), suite_file=None, plan_id=30985, suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+            )
+            content = Path(result["generated"][0]["file_path"]).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'await workflowPage.SelectOptionAsync("Country", TestEnvironmentSettings.ResolveEnvironmentSpecificValue('
+            'new Dictionary<string, string> { ["STAGE"] = "GB", }));',
+            content,
+        )
+        self.assertIn('SelectOptionAsync("Select Issue Type", ', content)
+        self.assertIn(
+            'SelectOptionAsync("Select Date", TestEnvironmentSettings.ResolveEnvironmentSpecificValue('
+            'new Dictionary<string, string> { ["DEV"] = "Feb-2026", ["STAGE"] = "Jan-2026", }));',
+            content,
+        )
+        self.assertLess(content.index("SelectOptionAsync(\"Select Date\""), content.index("Export to Excel\");"))
+
+    def test_selector_steps_with_literal_values_and_unparseable_wording(self):
+        for action, expected in (
+            ("Select 'GB' from the 'Country' dropdown.", 'SelectOptionAsync("Country", "GB");'),
+            ("In the Period picker, choose \u201806/2019\u2019", 'SelectOptionAsync("Period", "06/2019");'),
+        ):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                project_dir = root / "QA.Regression.Automation"
+                project_dir.mkdir()
+                suite_file = root / "suite.txt"
+                suite_file.write_text(REFRESH_EXPORT.replace("Click on Refresh button", action), encoding="utf-8")
+                result = generate_automation_scripts(
+                    client=None, suite_file=str(suite_file), plan_id=None, suite_id=None,
+                    project_dir=str(project_dir),
+                    namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+                )
+                self.assertIn(expected, Path(result["generated"][0]["file_path"]).read_text(encoding="utf-8"))
+
+        for action, error in (
+            ("Use the Country selector to select something", "selector step could not be generated"),
+            ("In 'Country' selector, select @country", "parameter '@country' has no value"),
+        ):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                project_dir = root / "QA.Regression.Automation"
+                project_dir.mkdir()
+                suite_file = root / "suite.txt"
+                suite_file.write_text(REFRESH_EXPORT.replace("Click on Refresh button", action), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, error):
+                    generate_automation_scripts(
+                        client=None, suite_file=str(suite_file), plan_id=None, suite_id=None,
+                        project_dir=str(project_dir),
+                        namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+                    )
+
     def test_parse_suite_export_text_reads_steps(self):
         source = parse_suite_export_text(SUITE_EXPORT)
 
