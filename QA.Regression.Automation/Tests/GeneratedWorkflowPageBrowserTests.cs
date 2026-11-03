@@ -534,6 +534,80 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     }
 
     [Test]
+    public void SummaryPaymentAvailabilityTimeoutOnlyExtendsTheSummaryEndpoint()
+    {
+        var workflowPage = new GeneratedWorkflowPage(Page);
+        foreach (var path in new[]
+        {
+            "/PaymentAvailability/GetSummaryPaymentAvailability",
+            "/paymentavailability/getsummarypaymentavailability/?page=1",
+            "https://example.test/PaymentAvailability/GetSummaryPaymentAvailability",
+        })
+        {
+            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 100000), Is.EqualTo(300000));
+            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 45000), Is.EqualTo(300000));
+        }
+
+        Assert.That(workflowPage.ResolveApiTimeoutMs("/PaymentAvailability/GetPagingRecords", 100000), Is.EqualTo(100000));
+        Assert.That(workflowPage.ResolveApiTimeoutMs("/Diagnostics/GetAllDiagnosticsSessions", 45000), Is.EqualTo(45000));
+        Assert.That(workflowPage.ResolveApiTimeoutMs("/Other/GetSummaryPaymentAvailability", 45000), Is.EqualTo(45000));
+    }
+
+    [Test]
+    public async Task CaptureSummaryPaymentAvailabilityWaitsBeyondTheDefaultHttpClientTimeout()
+    {
+        using var server = new LocalHttpServer(request =>
+        {
+            if (request.Path == "/PaymentAvailability/GetSummaryPaymentAvailability")
+            {
+                Thread.Sleep(105000);
+                return (200, "application/json", "{\"Data\":[],\"Total\":0}", null);
+            }
+
+            return (200, "text/html", "<h2>Payment Availability</h2>", null);
+        });
+
+        var status = await new GeneratedWorkflowPage(Page).GoToAndCaptureApiResponseStatusAsync(
+            server.Url("/PaymentAvailability/PaymentAvailabilityIndex"),
+            "/PaymentAvailability/GetSummaryPaymentAvailability",
+            new List<KeyValuePair<string, string>> { new("page", "1") });
+
+        Assert.That(status, Is.EqualTo(200));
+        Assert.That(await Page.Locator("#copilot-api-evidence-panel").InnerTextAsync(), Does.Contain("Status: 200"));
+    }
+
+    [Test]
+    public async Task CaptureWatchedSummaryPaymentAvailabilityUsesTheLongerResponseWait()
+    {
+        const string origin = "https://summary-wait.example.test";
+        await Page.RouteAsync(origin + "/**", async route =>
+        {
+            if (route.Request.Url.EndsWith("/GetSummaryPaymentAvailability"))
+            {
+                await Task.Delay(2500);
+                await route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "{}" });
+            }
+            else
+            {
+                await route.FulfillAsync(new()
+                {
+                    ContentType = "text/html",
+                    Body = "<h2>Payment Availability</h2><script>fetch('/PaymentAvailability/GetSummaryPaymentAvailability');</script>",
+                });
+            }
+        });
+        var workflowPage = new GeneratedWorkflowPage(Page)
+        {
+            ApiCallTimeoutMs = 500,
+            SummaryPaymentAvailabilityTimeoutMs = 6000,
+        };
+        workflowPage.WatchApiCalls("/PaymentAvailability/GetSummaryPaymentAvailability");
+        await workflowPage.GoToAsync(origin + "/PaymentAvailability/PaymentAvailabilityIndex");
+
+        Assert.That(await workflowPage.CaptureWatchedApiResponseStatusAsync(), Is.EqualTo(200));
+    }
+
+    [Test]
     public async Task VerifyGridFeatureFiltersEachColumnAndOpensTheNextPageOfTheGridUnderTheHeading()
     {
         await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true));
@@ -572,6 +646,23 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     }
 
     [Test]
+    public async Task VerifyGridFeatureWaitsLongerForSummaryLoadingFilteringClearingAndPagination()
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true, readDelayMs: 2500));
+        var workflowPage = new GeneratedWorkflowPage(Page)
+        {
+            DataSettleTimeoutMs = 2000,
+            GridFilterClearTimeoutMs = 1000,
+            SummaryPaymentAvailabilityTimeoutMs = 6000,
+        };
+
+        await workflowPage.VerifyGridFeatureAsync("Summary Table", new[] { "Root Name" }, verifyPagination: true);
+
+        Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('SummaryTablePayment').widget.dataSource.page()"), Is.EqualTo(2));
+        Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('SummaryTablePayment').widget.dataSource.filterCount()"), Is.Zero);
+    }
+
+    [Test]
     public async Task VerifyGridFeatureFailsWhenAColumnFilterDoesNotFilterTheGrid()
     {
         await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: false));
@@ -598,7 +689,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     }
 
     // Two Kendo-like grids with a filter row (change on blur, server-style reload) and a pager, as on Payment Availability.
-    private static string BuildGridFeaturePage(bool filtersWork, int recordCount = 120)
+    private static string BuildGridFeaturePage(bool filtersWork, int recordCount = 120, int readDelayMs = 300)
     {
         const string gridMarkup = """
             <div class='k-grid' id='GRID_ID'>
@@ -645,7 +736,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
                         .map(r => `<tr><td>${r.RootName}</td><td>${r.SiteName}</td><td>${r.SegmentName}</td></tr>`).join('');
                       grid.querySelector('.k-pager-info').textContent = `${shown.length} of ${matching().length} items`;
                       this._requestInProgress = false;
-                    }, 300);
+                    }, READ_DELAY_MS);
                   },
                 };
                 grid.widget = { dataSource };
@@ -667,6 +758,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
             </script>
             """
             .Replace("RECORD_COUNT", recordCount.ToString())
+            .Replace("READ_DELAY_MS", readDelayMs.ToString())
             .Replace("FILTERS_WORK", filtersWork ? "true" : "false");
     }
 

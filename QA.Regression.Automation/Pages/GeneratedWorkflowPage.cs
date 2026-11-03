@@ -23,6 +23,7 @@ public class GeneratedWorkflowPage
     internal int DependentOptionsTimeoutMs { get; init; } = 90000;
     internal int PendingRequestIgnoreAfterMs { get; init; } = 30000;
     internal int GridFilterClearTimeoutMs { get; init; } = 15000;
+    internal int SummaryPaymentAvailabilityTimeoutMs { get; init; } = 300000;
     private const int DataRequestQuietMs = 500;
     private const int ReapplySelectionIntervalMs = 5000;
 
@@ -92,6 +93,12 @@ public class GeneratedWorkflowPage
 
     private static bool IsDataRequest(IRequest request) =>
         request.ResourceType is "xhr" or "fetch";
+
+    internal int ResolveApiTimeoutMs(string apiPath, int defaultTimeoutMs) =>
+        apiPath.Split('?', '#')[0].TrimEnd('/').EndsWith(
+            "/PaymentAvailability/GetSummaryPaymentAvailability", StringComparison.OrdinalIgnoreCase)
+            ? SummaryPaymentAvailabilityTimeoutMs
+            : defaultTimeoutMs;
 
     private void ForgetDataRequest(IRequest request)
     {
@@ -292,7 +299,8 @@ public class GeneratedWorkflowPage
         {
             var selectionCount = Volatile.Read(ref _selectionCount);
             var selections = string.Join("; ", _appliedSelections);
-            var request = await WaitForWatchedCallAsync(watch, selectionCount, ApiCallTimeoutMs);
+            var timeoutMs = ResolveApiTimeoutMs(watch.Path, ApiCallTimeoutMs);
+            var request = await WaitForWatchedCallAsync(watch, selectionCount, timeoutMs);
             if (request is null && selectionCount > 1)
             {
                 request = LatestWatchedCall(watch, 1);
@@ -300,7 +308,7 @@ public class GeneratedWorkflowPage
                 {
                     TestContext.Progress.WriteLine(
                         $"WARNING: Test {TestContext.CurrentContext.Test.Name}: the page did not call '{watch.Path}' again " +
-                        $"within {ApiCallTimeoutMs} ms after the last selection; using the call made after an earlier selection ({selections}).");
+                        $"within {timeoutMs} ms after the last selection; using the call made after an earlier selection ({selections}).");
                 }
             }
 
@@ -314,11 +322,11 @@ public class GeneratedWorkflowPage
 
                 var after = selectionCount > 0 ? $"after selecting {selections}" : "after opening the page";
                 throw new InvalidOperationException(
-                    $"The page did not call '{watch.Path}' within {ApiCallTimeoutMs} ms {after} on '{_page.Url}'. " +
+                    $"The page did not call '{watch.Path}' within {timeoutMs} ms {after} on '{_page.Url}'. " +
                     $"Calls seen before that point: {earlierCalls}. Check the Test Case selections and API URL.");
             }
 
-            var response = await request.ResponseAsync().WaitAsync(TimeSpan.FromMilliseconds(ApiCallTimeoutMs))
+            var response = await request.ResponseAsync().WaitAsync(TimeSpan.FromMilliseconds(timeoutMs))
                 ?? throw new InvalidOperationException(
                     $"The page's {request.Method} call to '{request.Url}' failed without a response: {request.Failure ?? "unknown error"}.");
             string responseBody;
@@ -1679,16 +1687,19 @@ public class GeneratedWorkflowPage
         }
 
         var gridLabel = $"'{featureName}' grid" + (located.GetProperty("gridId").GetString() is { Length: > 0 } id ? $" (#{id})" : string.Empty);
+        var isSummaryPaymentGrid = string.Equals(
+            located.GetProperty("gridId").GetString(), "SummaryTablePayment", StringComparison.OrdinalIgnoreCase);
+        var timeoutMs = isSummaryPaymentGrid ? SummaryPaymentAvailabilityTimeoutMs : DataSettleTimeoutMs;
         await _page.Locator($"[data-automation-grid='{token}']").ScrollIntoViewIfNeededAsync();
         await WaitForPendingDataRequestsAsync($"before checking the {gridLabel}");
 
-        var (initial, loaded) = await WaitForGridStateAsync(token, null, state => state.Rows > 0);
+        var (initial, loaded) = await WaitForGridStateAsync(token, null, state => state.Rows > 0, timeoutMs);
         if (!loaded)
         {
             throw new InvalidOperationException(
                 $"The {gridLabel} " +
                 (initial.Loading ? "was still loading its data" : "showed no records") +
-                $" after {DataSettleTimeoutMs} ms (selections: {selections}). " +
+                $" after {timeoutMs} ms (selections: {selections}). " +
                 "Filtering and pagination cannot be checked without data; check the Test Case's selected options.");
         }
 
@@ -1701,12 +1712,12 @@ public class GeneratedWorkflowPage
 
         for (var index = 0; index < filterColumns.Count; index++)
         {
-            results.Add(await VerifyGridColumnFilterAsync(token, gridLabel, filterColumns[index], $"{token}-{index}"));
+            results.Add(await VerifyGridColumnFilterAsync(token, gridLabel, filterColumns[index], $"{token}-{index}", timeoutMs));
         }
 
         if (verifyPagination)
         {
-            results.Add(await VerifyGridPaginationAsync(token, gridLabel));
+            results.Add(await VerifyGridPaginationAsync(token, gridLabel, timeoutMs));
         }
 
         foreach (var line in results)
@@ -1717,7 +1728,7 @@ public class GeneratedWorkflowPage
         await AttachGridFeatureEvidenceAsync(token, results);
     }
 
-    private async Task<string> VerifyGridColumnFilterAsync(string token, string gridLabel, string column, string marker)
+    private async Task<string> VerifyGridColumnFilterAsync(string token, string gridLabel, string column, string marker, int timeoutMs)
     {
         var mark = await _page.EvaluateAsync<JsonElement>(MarkGridFilterInputScript, new { token, title = column, marker });
         if (mark.TryGetProperty("error", out var markError))
@@ -1726,7 +1737,7 @@ public class GeneratedWorkflowPage
         }
 
         var field = mark.GetProperty("field").GetString()!;
-        var (before, _) = await WaitForGridStateAsync(token, field, state => state.Rows > 0);
+        var (before, _) = await WaitForGridStateAsync(token, field, state => state.Rows > 0, timeoutMs);
         var sample = before.Values.Select(value => value.Trim()).FirstOrDefault(value => value.Length > 0)
             ?? throw new InvalidOperationException($"{gridLabel}: the '{column}' column has no value to filter by on the current page.");
 
@@ -1735,11 +1746,12 @@ public class GeneratedWorkflowPage
         var (filtered, applied) = await WaitForGridStateAsync(
             token,
             field,
-            state => state.FilterFields.Contains(field, StringComparer.OrdinalIgnoreCase));
+            state => state.FilterFields.Contains(field, StringComparer.OrdinalIgnoreCase),
+            timeoutMs);
         if (!applied)
         {
             throw new InvalidOperationException(
-                $"{gridLabel}: typing '{sample}' in the '{column}' filter did not filter the grid within {DataSettleTimeoutMs} ms.");
+                $"{gridLabel}: typing '{sample}' in the '{column}' filter did not filter the grid within {timeoutMs} ms.");
         }
 
         var mismatches = filtered.Values
@@ -1754,7 +1766,9 @@ public class GeneratedWorkflowPage
 
         await ApplyGridFilterTextAsync(input, string.Empty);
         bool HasNoFilter(GridState state) => !state.FilterFields.Contains(field, StringComparer.OrdinalIgnoreCase);
-        var (_, cleared) = await WaitForGridStateAsync(token, field, HasNoFilter, GridFilterClearTimeoutMs);
+        var (_, cleared) = await WaitForGridStateAsync(
+            token, field, HasNoFilter,
+            timeoutMs == SummaryPaymentAvailabilityTimeoutMs ? timeoutMs : GridFilterClearTimeoutMs);
         if (!cleared)
         {
             var clearButton = _page.Locator(
@@ -1764,7 +1778,7 @@ public class GeneratedWorkflowPage
             if (await clearButton.CountAsync() > 0 && await clearButton.First.IsVisibleAsync())
             {
                 await clearButton.First.ClickAsync();
-                (_, cleared) = await WaitForGridStateAsync(token, field, HasNoFilter);
+                (_, cleared) = await WaitForGridStateAsync(token, field, HasNoFilter, timeoutMs);
             }
         }
 
@@ -1784,9 +1798,9 @@ public class GeneratedWorkflowPage
         await input.PressAsync("Tab");
     }
 
-    private async Task<string> VerifyGridPaginationAsync(string token, string gridLabel)
+    private async Task<string> VerifyGridPaginationAsync(string token, string gridLabel, int timeoutMs)
     {
-        var (state, _) = await WaitForGridStateAsync(token, null, current => current.Rows > 0);
+        var (state, _) = await WaitForGridStateAsync(token, null, current => current.Rows > 0, timeoutMs);
         var marker = Guid.NewGuid().ToString("N");
         var pager = await _page.EvaluateAsync<JsonElement>(MarkGridNextPageScript, new { token, marker });
         if (pager.TryGetProperty("error", out var pagerError))
@@ -1808,11 +1822,12 @@ public class GeneratedWorkflowPage
 
         var startPage = state.Page;
         await _page.Locator($"[data-automation-next-page='{marker}']").ClickAsync();
-        var (next, moved) = await WaitForGridStateAsync(token, null, current => current.Page == startPage + 1 && current.Rows > 0);
+        var (next, moved) = await WaitForGridStateAsync(
+            token, null, current => current.Page == startPage + 1 && current.Rows > 0, timeoutMs);
         if (!moved)
         {
             throw new InvalidOperationException(
-                $"{gridLabel}: clicking 'next page' did not show page {startPage + 1} within {DataSettleTimeoutMs} ms (still page {next.Page}, {next.Rows} rows).");
+                $"{gridLabel}: clicking 'next page' did not show page {startPage + 1} within {timeoutMs} ms (still page {next.Page}, {next.Rows} rows).");
         }
 
         return $"Pagination: moved from page {startPage} to page {next.Page}, showing {next.Rows} of {next.Total} records";
@@ -1955,6 +1970,8 @@ public class GeneratedWorkflowPage
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
         };
         using var client = new HttpClient(handler);
+        client.Timeout = TimeSpan.FromMilliseconds(
+            ResolveApiTimeoutMs(requestUri.AbsolutePath, (int)client.Timeout.TotalMilliseconds));
         client.DefaultRequestHeaders.Add("Accept", "application/json, text/plain, */*");
         // The page's own jQuery/Kendo calls send this header; some MVC actions only answer AJAX requests.
         client.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
