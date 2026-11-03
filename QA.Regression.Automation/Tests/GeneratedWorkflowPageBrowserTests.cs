@@ -484,6 +484,307 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         });
     }
 
+    [Test]
+    public async Task CaptureApiResponseStatusPostsTheTestCasePayloadWithTheBrowserSession()
+    {
+        using var server = new LocalHttpServer(request =>
+        {
+            if (request.Path == "/PaymentAvailability/PaymentAvailabilityIndex")
+            {
+                return (200, "text/html", "<h2>Payment Availability</h2>", "session=signed-in; Path=/");
+            }
+
+            if (request.Path == "/PaymentAvailability/GetPagingRecords" && request.Method == "POST")
+            {
+                return (200, "application/json", "{\"Data\":[],\"Total\":0}", null);
+            }
+
+            return (405, "text/plain", "Method not allowed", null);
+        });
+        var payload = new List<KeyValuePair<string, string>>
+        {
+            new("sort", ""),
+            new("page", "1"),
+            new("filter", "(Email~doesnotcontain~'endeco')"),
+            new("Period", "2026-09-01T00:00:00.000Z"),
+            new("CountryId", "2"),
+        };
+
+        var status = await new GeneratedWorkflowPage(Page).GoToAndCaptureApiResponseStatusAsync(
+            server.Url("/PaymentAvailability/PaymentAvailabilityIndex"),
+            "/PaymentAvailability/GetPagingRecords",
+            payload);
+
+        Assert.That(status, Is.EqualTo(200));
+        var apiRequest = server.Requests.Single(request => request.Path == "/PaymentAvailability/GetPagingRecords");
+        Assert.That(apiRequest.Method, Is.EqualTo("POST"));
+        Assert.That(apiRequest.Headers["content-type"], Does.StartWith("application/x-www-form-urlencoded"));
+        Assert.That(apiRequest.Headers["x-requested-with"], Is.EqualTo("XMLHttpRequest"));
+        Assert.That(apiRequest.Headers["cookie"], Does.Contain("session=signed-in"));
+        var form = apiRequest.Body.Split('&')
+            .Select(pair => pair.Split('=', 2))
+            .ToDictionary(pair => Uri.UnescapeDataString(pair[0]), pair => Uri.UnescapeDataString(pair[1].Replace('+', ' ')));
+        Assert.That(form, Is.EquivalentTo(payload.ToDictionary(field => field.Key, field => field.Value)));
+        Assert.That(apiRequest.Body, Does.StartWith("sort=&page=1&filter="), "The payload keeps the Test Case's field order.");
+
+        var evidence = await Page.Locator("#copilot-api-evidence-panel").InnerTextAsync();
+        Assert.That(evidence, Does.Contain("POST"));
+        Assert.That(evidence, Does.Contain("Payload sent: sort=&page=1&filter=(Email~doesnotcontain~'endeco')&Period=2026-09-01T00:00:00.000Z&CountryId=2"));
+        Assert.That(evidence, Does.Contain("Status: 200"));
+    }
+
+    [Test]
+    public async Task VerifyGridFeatureFiltersEachColumnAndOpensTheNextPageOfTheGridUnderTheHeading()
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true));
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await workflowPage.VerifyGridFeatureAsync(
+            "Payment Availability",
+            new[] { "Root Name", "Site Name", "Segment Name" },
+            verifyPagination: true);
+
+        Assert.That(await Page.GetAttributeAsync("#grid", "data-automation-grid"), Is.Not.Null);
+        Assert.That(await Page.GetAttributeAsync("#SummaryTablePayment", "data-automation-grid"), Is.Null);
+        Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('grid').widget.dataSource.page()"), Is.EqualTo(2));
+        Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('grid').widget.dataSource.filterCount()"), Is.Zero,
+            "Each column filter is cleared after it is checked.");
+        var evidence = await Page.Locator("#automation-grid-feature-evidence").InnerTextAsync();
+        Assert.That(evidence, Does.Contain("first grid after the 'Payment Availability' heading"));
+        Assert.That(evidence, Does.Contain("Filter 'Root Name' contains 'Root 0'"));
+        Assert.That(evidence, Does.Contain("Filter 'Site Name' contains 'Site 0'"));
+        Assert.That(evidence, Does.Contain("Filter 'Segment Name' contains 'Segment 0'"));
+        Assert.That(evidence, Does.Contain("moved from page 1 to page 2"));
+    }
+
+    [Test]
+    public async Task VerifyGridFeatureUsesTheGridUnderTheSummaryTableHeading()
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true));
+
+        await new GeneratedWorkflowPage(Page).VerifyGridFeatureAsync(
+            "Summary Table",
+            new[] { "Root Name" },
+            verifyPagination: true);
+
+        Assert.That(await Page.GetAttributeAsync("#SummaryTablePayment", "data-automation-grid"), Is.Not.Null);
+        Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('SummaryTablePayment').widget.dataSource.page()"), Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task VerifyGridFeatureFailsWhenAColumnFilterDoesNotFilterTheGrid()
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: false));
+        var workflowPage = new GeneratedWorkflowPage(Page) { DataSettleTimeoutMs = 3000 };
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(() => workflowPage.VerifyGridFeatureAsync(
+            "Payment Availability",
+            new[] { "Root Name" },
+            verifyPagination: false));
+        Assert.That(exception!.Message, Does.Contain("typing 'Root 0' in the 'Root Name' filter did not filter the grid"));
+    }
+
+    [Test]
+    public async Task VerifyGridFeatureFailsClearlyWhenTheGridHasNoRecords()
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true, recordCount: 0));
+        var workflowPage = new GeneratedWorkflowPage(Page) { DataSettleTimeoutMs = 3000 };
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(() => workflowPage.VerifyGridFeatureAsync(
+            "Payment Availability",
+            new[] { "Root Name" },
+            verifyPagination: true));
+        Assert.That(exception!.Message, Does.Contain("'Payment Availability' grid (#grid) showed no records"));
+    }
+
+    // Two Kendo-like grids with a filter row (change on blur, server-style reload) and a pager, as on Payment Availability.
+    private static string BuildGridFeaturePage(bool filtersWork, int recordCount = 120)
+    {
+        const string gridMarkup = """
+            <div class='k-grid' id='GRID_ID'>
+              <table>
+                <thead>
+                  <tr><th data-field='RootName' data-title='Root Name'>Root Name</th><th data-field='SiteName' data-title='Site Name'>Site Name</th><th data-field='SegmentName' data-title='Segment Name'>Segment Name</th></tr>
+                  <tr class='k-filter-row'>
+                    <th><span data-field='RootName'><input type='text'></span></th>
+                    <th><span data-field='SiteName'><input type='text'></span></th>
+                    <th><input type='text'></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class='k-pager-wrap'><a href='#' title='Go to the next page'>&rsaquo;</a> <span class='k-pager-info'></span></div>
+            </div>
+            """;
+        return "<h2>Payment Availability</h2>" + gridMarkup.Replace("GRID_ID", "grid")
+            + "<h3>Summary Table</h3>" + gridMarkup.Replace("GRID_ID", "SummaryTablePayment")
+            + """
+            <script>
+              window.jQuery = element => element;
+              window.kendo = { widgetInstance: element => element && element.widget };
+              const records = Array.from({ length: RECORD_COUNT }, (_, i) =>
+                ({ RootName: `Root ${i % 3}`, SiteName: `Site ${i % 5}`, SegmentName: `Segment ${i % 7}` }));
+              for (const grid of document.querySelectorAll('.k-grid')) {
+                let filters = [];
+                let page = 1;
+                let shown = [];
+                const matching = () => records.filter(record => filters.every(f => record[f.field].includes(f.value)));
+                const dataSource = {
+                  _requestInProgress: false,
+                  view: () => shown,
+                  total: () => matching().length,
+                  pageSize: () => 50,
+                  page: () => page,
+                  filter: () => filters.length ? { logic: 'and', filters } : undefined,
+                  filterCount: () => filters.length,
+                  read() {
+                    this._requestInProgress = true;
+                    setTimeout(() => {
+                      shown = matching().slice((page - 1) * 50, page * 50);
+                      grid.querySelector('tbody').innerHTML = shown
+                        .map(r => `<tr><td>${r.RootName}</td><td>${r.SiteName}</td><td>${r.SegmentName}</td></tr>`).join('');
+                      grid.querySelector('.k-pager-info').textContent = `${shown.length} of ${matching().length} items`;
+                      this._requestInProgress = false;
+                    }, 300);
+                  },
+                };
+                grid.widget = { dataSource };
+                const fields = ['RootName', 'SiteName', 'SegmentName'];
+                grid.querySelectorAll('.k-filter-row input').forEach((input, index) => input.addEventListener('change', () => {
+                  if (!FILTERS_WORK) return;
+                  filters = filters.filter(f => f.field !== fields[index]);
+                  if (input.value) filters.push({ field: fields[index], operator: 'contains', value: input.value });
+                  page = 1;
+                  dataSource.read();
+                }));
+                grid.querySelector('[title="Go to the next page"]').addEventListener('click', event => {
+                  event.preventDefault();
+                  page++;
+                  dataSource.read();
+                });
+                dataSource.read();
+              }
+            </script>
+            """
+            .Replace("RECORD_COUNT", recordCount.ToString())
+            .Replace("FILTERS_WORK", filtersWork ? "true" : "false");
+    }
+
+    private sealed record LocalHttpRequest(string Method, string Path, Dictionary<string, string> Headers, string Body);
+
+    // Minimal HTTP server for checks that send requests outside the browser (Playwright routes only see browser traffic).
+    private sealed class LocalHttpServer : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Func<LocalHttpRequest, (int Status, string ContentType, string Body, string? SetCookie)> _handler;
+        private readonly List<LocalHttpRequest> _requests = new();
+
+        public LocalHttpServer(Func<LocalHttpRequest, (int Status, string ContentType, string Body, string? SetCookie)> handler)
+        {
+            _handler = handler;
+            _listener.Start();
+            _ = Task.Run(AcceptLoopAsync);
+        }
+
+        public IReadOnlyList<LocalHttpRequest> Requests
+        {
+            get
+            {
+                lock (_requests)
+                {
+                    return _requests.ToArray();
+                }
+            }
+        }
+
+        public string Url(string path) => $"http://127.0.0.1:{((System.Net.IPEndPoint)_listener.LocalEndpoint).Port}{path}";
+
+        private async Task AcceptLoopAsync()
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                System.Net.Sockets.TcpClient client;
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                _ = Task.Run(() => HandleAsync(client));
+            }
+        }
+
+        private async Task HandleAsync(System.Net.Sockets.TcpClient client)
+        {
+            using (client)
+            {
+                var stream = client.GetStream();
+                var buffer = new List<byte>();
+                var chunk = new byte[8192];
+                int headerEnd;
+                while ((headerEnd = IndexOfHeaderEnd(buffer)) < 0)
+                {
+                    var read = await stream.ReadAsync(chunk);
+                    if (read == 0) return;
+                    buffer.AddRange(chunk.AsSpan(0, read).ToArray());
+                }
+
+                var headerLines = System.Text.Encoding.ASCII.GetString(buffer.ToArray(), 0, headerEnd).Split("\r\n");
+                var requestLine = headerLines[0].Split(' ');
+                var headers = headerLines.Skip(1)
+                    .Select(line => line.Split(':', 2))
+                    .Where(parts => parts.Length == 2)
+                    .GroupBy(parts => parts[0].Trim().ToLowerInvariant())
+                    .ToDictionary(group => group.Key, group => string.Join("; ", group.Select(parts => parts[1].Trim())));
+                var contentLength = headers.TryGetValue("content-length", out var length) ? int.Parse(length) : 0;
+                while (buffer.Count - headerEnd - 4 < contentLength)
+                {
+                    var read = await stream.ReadAsync(chunk);
+                    if (read == 0) break;
+                    buffer.AddRange(chunk.AsSpan(0, read).ToArray());
+                }
+
+                var body = System.Text.Encoding.UTF8.GetString(buffer.ToArray(), headerEnd + 4, Math.Max(0, buffer.Count - headerEnd - 4));
+                var request = new LocalHttpRequest(requestLine[0], requestLine[1].Split('?')[0], headers, body);
+                lock (_requests)
+                {
+                    _requests.Add(request);
+                }
+
+                var (status, contentType, responseBody, setCookie) = _handler(request);
+                var bytes = System.Text.Encoding.UTF8.GetBytes(responseBody);
+                var head = $"HTTP/1.1 {status} {(status == 200 ? "OK" : "Error")}\r\nContent-Type: {contentType}\r\n" +
+                    $"Content-Length: {bytes.Length}\r\nConnection: close\r\n" +
+                    (setCookie is null ? string.Empty : $"Set-Cookie: {setCookie}\r\n") + "\r\n";
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(head));
+                await stream.WriteAsync(bytes);
+            }
+        }
+
+        private static int IndexOfHeaderEnd(List<byte> buffer)
+        {
+            for (var index = 0; index + 3 < buffer.Count; index++)
+            {
+                if (buffer[index] == '\r' && buffer[index + 1] == '\n' && buffer[index + 2] == '\r' && buffer[index + 3] == '\n')
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _listener.Stop();
+        }
+    }
+
     private async Task RouteExportPageAsync(string pageUrl, string body)
     {
         await Page.RouteAsync(pageUrl + "**", async route =>

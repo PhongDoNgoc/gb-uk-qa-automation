@@ -493,22 +493,16 @@ def _render_generic_body(test_case: SuiteTestCase) -> list[str]:
             lines.append("await workflowPage.FillCredentialInputsAsync(username, password);")
 
         click_target = _extract_click_target(step.action)
-        selection = _extract_selection(step.action)
-        if selection:
-            label, value = selection
-            lines.append(
-                f'await workflowPage.SelectOptionAsync("{_escape_csharp_string(label)}", '
-                f"{_build_selection_value_expression(test_case, step.index, label, value)});"
-            )
-        elif _looks_like_selection_step(step.action):
-            raise ValueError(
-                f"Test case {test_case.test_case_id} step {step.index}: selector step could not be generated: "
-                f"'{step.action}'. Use a step such as: In 'Country' selector, select @country."
-            )
+        selection_lines = _render_selection_lines(test_case, step)
+        grid_feature = _extract_grid_feature(step)
+        if selection_lines:
+            lines.extend(selection_lines)
+        elif grid_feature:
+            lines.append(_render_grid_feature_line(*grid_feature))
         elif click_target:
             lines.append(f'await workflowPage.ClickButtonAsync("{_escape_csharp_string(click_target)}");')
 
-        expected_texts = _extract_expected_texts(step.expected)
+        expected_texts = [] if grid_feature else _extract_expected_texts(step.expected)
         for expected in expected_texts:
             lines.append(f'await workflowPage.AssertTextVisibleAsync("{_escape_csharp_string(expected)}");')
 
@@ -530,20 +524,10 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
     api_path_values_by_environment: dict[str, str] = {}
     expected_status_code = 200
     selection_lines: list[str] = []
+    payload_lines: list[str] = []
 
     for step in test_case.steps:
-        selection = _extract_selection(step.action)
-        if selection:
-            label, value = selection
-            selection_lines.append(
-                f'await workflowPage.SelectOptionAsync("{_escape_csharp_string(label)}", '
-                f"{_build_selection_value_expression(test_case, step.index, label, value)});"
-            )
-        elif _looks_like_selection_step(step.action):
-            raise ValueError(
-                f"Test case {test_case.test_case_id} step {step.index}: selector step could not be generated: "
-                f"'{step.action}'. Use a step such as: In 'Customer' selector, select @customer."
-            )
+        selection_lines.extend(_render_selection_lines(test_case, step))
 
         if not page_path:
             page_path = _extract_baseurl_reference(
@@ -565,6 +549,10 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
                     step.action,
                     test_case.parameter_rows,
                 )
+            if api_path_fragment:
+                payload_fields = _extract_payload_fields(test_case, step)
+                if payload_fields:
+                    payload_lines = _render_payload_lines(test_case, step, payload_fields)
         if step.expected:
             parsed_status_code = _extract_expected_status_code(step.expected)
             if parsed_status_code is not None:
@@ -599,6 +587,7 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
         )
     else:
         lines.append(f'var apiPathFragment = "{_escape_csharp_string(api_path_fragment)}";')
+    lines.extend(payload_lines)
     lines.extend(
         [
             f"const int expectedStatusCode = {expected_status_code};",
@@ -618,7 +607,21 @@ def _render_authenticated_api_status_body(test_case: SuiteTestCase) -> list[str]
             "",
         ]
     )
-    if selection_lines:
+    if payload_lines:
+        # The Test Case gives the request body, so the test sends it as the page does: a form POST.
+        if selection_lines:
+            lines.extend(
+                [
+                    "await workflowPage.GoToAsync(targetPageUrl);",
+                    *selection_lines,
+                    "var actualStatusCode = await workflowPage.CaptureApiResponseStatusAsync(apiPathFragment, payload);",
+                ]
+            )
+        else:
+            lines.append(
+                "var actualStatusCode = await workflowPage.GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment, payload);"
+            )
+    elif selection_lines:
         # The page must make the call itself after the selections; it may use a method or body
         # (for example POST) that a standalone GET to the API URL would not reproduce.
         lines.extend(
@@ -748,14 +751,14 @@ def _extract_baseurl_reference(
     preserve_unresolved_parameters: bool = False,
 ) -> str:
     match = re.search(
-        rf"{re.escape(label)}(?:\s*@environment)?\s*:\s*(baseurl/.+)$",
+        rf"{re.escape(label)}(?:\s*@environment)?\s*[:=]\s*(baseurl/.+)$",
         value,
         re.I,
     )
     if not match:
         return ""
 
-    normalized = match.group(1).strip()
+    normalized = _PAYLOAD_INTRO.split(match.group(1), maxsplit=1)[0].strip()
     normalized = re.sub(r"\s+", "", normalized)
     normalized = normalized.replace("baseURL", "baseurl").replace("'", "")
     normalized = _replace_parameter_placeholders(normalized, parameter_values or {})
@@ -870,20 +873,152 @@ def _extract_selection(value: str) -> tuple[str, str] | None:
     return None
 
 
+# "Select Country = @country, Energy Service = @energyservice in the selectors"
+_MULTI_SELECTION_PATTERN = re.compile(
+    rf"^(?:select|choose)\s+(?P<pairs>.+?=.+?)\s+in\s+(?:the\s+)?{_SELECTOR_NOUN}s?\s*[.!]?$",
+    re.I,
+)
+_MULTI_SELECTION_PAIR = re.compile(
+    rf"[{_QUOTE}]?(?P<label>[^={_QUOTE}]+?)[{_QUOTE}]?\s*=\s*[{_QUOTE}]?(?P<value>[^{_QUOTE}]+?)[{_QUOTE}]?"
+)
+
+
+def _extract_selections(value: str) -> list[tuple[str, str]]:
+    single = _extract_selection(value)
+    if single:
+        return [single]
+
+    text = re.sub(r"\s+", " ", value).strip()
+    match = _MULTI_SELECTION_PATTERN.match(text)
+    if not match:
+        return []
+
+    selections: list[tuple[str, str]] = []
+    # Split on commas, and on "and" only when another "Label =" follows, so values such as "Gas and Power" stay whole.
+    for part in re.split(r"\s*,\s*(?:and\s+)?|\s+and\s+(?=[^=,]+=)", match.group("pairs")):
+        pair = _MULTI_SELECTION_PAIR.fullmatch(part.strip())
+        if not pair:
+            return []
+        selections.append((pair.group("label").strip(), pair.group("value").strip()))
+    return selections
+
+
 def _looks_like_selection_step(value: str) -> bool:
     return (
         re.search(r"\b(?:select|choose)\b", value, re.I) is not None
-        and re.search(rf"\b{_SELECTOR_NOUN}\b", value, re.I) is not None
+        and re.search(rf"\b{_SELECTOR_NOUN}s?\b", value, re.I) is not None
+    )
+
+
+def _render_selection_lines(test_case: SuiteTestCase, step: SuiteStep) -> list[str]:
+    selections = _extract_selections(step.action)
+    if not selections and _looks_like_selection_step(step.action):
+        raise ValueError(
+            f"Test case {test_case.test_case_id} step {step.index}: selector step could not be generated: "
+            f"'{step.action}'. Use a step such as: In 'Country' selector, select @country, "
+            "or: Select Country = @country, Period = @period in the selectors."
+        )
+    return [
+        f'await workflowPage.SelectOptionAsync("{_escape_csharp_string(label)}", '
+        f"{_build_selection_value_expression(test_case, step.index, label, value)});"
+        for label, value in selections
+    ]
+
+
+_PAYLOAD_INTRO = re.compile(r"\s+in\s+(?:the\s+)?(?:api\s+)?payload\b", re.I)
+_PAYLOAD_START = re.compile(r"\bin\s+(?:the\s+)?(?:api\s+)?payload\b\s*,?\s*(?:input\b)?\s*:?\s*", re.I)
+# A payload key starts after whitespace and its colon is followed by whitespace, so values such as
+# 2024-08-01T00:00:00.000Z are not split.
+_PAYLOAD_KEY = re.compile(r"(?:^|(?<=\s))(?P<key>[A-Za-z_][A-Za-z0-9_.\[\]]*)\s*:(?=\s|$)")
+_BLANK_PAYLOAD_VALUES = {"blank", "empty", "(blank)", "(empty)", "''", '""'}
+
+
+def _extract_payload_fields(test_case: SuiteTestCase, step: SuiteStep) -> list[tuple[str, str]]:
+    text = re.sub(r"\s+", " ", step.action).strip()
+    start = _PAYLOAD_START.search(text)
+    if not start:
+        return []
+
+    body = text[start.end():]
+    keys = list(_PAYLOAD_KEY.finditer(body))
+    if not keys or body[: keys[0].start()].strip():
+        raise ValueError(
+            f"Test case {test_case.test_case_id} step {step.index}: the API payload could not be read: '{body}'. "
+            "Use 'In payload, input:' followed by 'key: value' entries, for example: sort: blank page: 1."
+        )
+
+    fields: list[tuple[str, str]] = []
+    for position, key in enumerate(keys):
+        end = keys[position + 1].start() if position + 1 < len(keys) else len(body)
+        value = body[key.end():end].strip()
+        fields.append((key.group("key"), "" if value.casefold() in _BLANK_PAYLOAD_VALUES else value))
+    return fields
+
+
+def _render_payload_lines(test_case: SuiteTestCase, step: SuiteStep, fields: list[tuple[str, str]]) -> list[str]:
+    lines = ["var payload = new List<KeyValuePair<string, string>>", "{"]
+    for key, value in fields:
+        expression = _build_parameter_value_expression(
+            test_case,
+            f"Test case {test_case.test_case_id} step {step.index} (payload '{key}')",
+            value,
+        )
+        lines.append(f'    new("{_escape_csharp_string(key)}", {expression}),')
+    lines.append("};")
+    return lines
+
+
+_GRID_FEATURE_ACTION = re.compile(r"^verify\s+(?:the\s+)?(?P<feature>.+?)\s+feature\s*[.!]?$", re.I)
+_GRID_FEATURE_CHECKS = re.compile(r"\(\s*(?:filter(?:ing|ed)?\s+by\s+)?(?P<checks>[^()]*)\)", re.I)
+
+
+def _extract_grid_feature(step: SuiteStep) -> tuple[str, list[str], bool] | None:
+    action = _GRID_FEATURE_ACTION.match(re.sub(r"\s+", " ", step.action).strip())
+    expected = re.sub(r"\s+", " ", step.expected).strip()
+    if not action or not re.search(r"\bdisplayed\b", expected, re.I):
+        return None
+    checks = _GRID_FEATURE_CHECKS.search(expected)
+    if not checks or not re.search(r"\b(?:filter|pagination|paging)\b", expected, re.I):
+        return None
+
+    feature = re.sub(r"^view\s+", "", action.group("feature"), flags=re.I).strip()
+    filter_columns: list[str] = []
+    verify_pagination = False
+    for item in re.split(r"\s*,\s*|\s+and\s+", checks.group("checks")):
+        item = item.strip().strip(_QUOTE).strip()
+        if not item:
+            continue
+        if re.fullmatch(r"pagination|paging|pager", item, re.I):
+            verify_pagination = True
+        else:
+            filter_columns.append(item)
+    if not feature or (not filter_columns and not verify_pagination):
+        return None
+    return feature, filter_columns, verify_pagination
+
+
+def _render_grid_feature_line(feature: str, filter_columns: list[str], verify_pagination: bool) -> str:
+    columns = ", ".join(f'"{_escape_csharp_string(column)}"' for column in filter_columns)
+    return (
+        f'await workflowPage.VerifyGridFeatureAsync("{_escape_csharp_string(feature)}", '
+        f"new string[] {{ {columns} }}, verifyPagination: {'true' if verify_pagination else 'false'});"
     )
 
 
 def _build_selection_value_expression(test_case: SuiteTestCase, step_index: int, label: str, value: str) -> str:
+    return _build_parameter_value_expression(
+        test_case,
+        f"Test case {test_case.test_case_id} step {step_index} ('{label}' selector)",
+        value,
+    )
+
+
+def _build_parameter_value_expression(test_case: SuiteTestCase, context: str, value: str) -> str:
     parameter = re.fullmatch(r"@([A-Za-z0-9_]+)", value)
     if not parameter:
         return f'"{_escape_csharp_string(value)}"'
 
     name = parameter.group(1)
-    context = f"Test case {test_case.test_case_id} step {step_index} ('{label}' selector)"
     if not _has_environment_parameter_rows(test_case.parameter_rows):
         resolved = _get_case_insensitive_value(test_case.parameter_values, name)
         if not resolved:
@@ -990,7 +1125,7 @@ def _is_authenticated_api_status_case(test_case: SuiteTestCase) -> bool:
         and "logged in viewpoint portal" in all_text
         and "response status" in all_text
         and "status code should be" in all_text
-        and re.search(r"\brequest\s+url(?:\s*@environment)?\s*:", all_text) is not None
+        and re.search(r"\brequest\s+url(?:\s*@environment)?\s*[:=]", all_text) is not None
     )
 
 

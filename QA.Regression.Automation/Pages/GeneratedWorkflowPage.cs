@@ -22,6 +22,7 @@ public class GeneratedWorkflowPage
     internal int SelectorOptionsTimeoutMs { get; init; } = 30000;
     internal int DependentOptionsTimeoutMs { get; init; } = 90000;
     internal int PendingRequestIgnoreAfterMs { get; init; } = 30000;
+    internal int GridFilterClearTimeoutMs { get; init; } = 15000;
     private const int DataRequestQuietMs = 500;
     private const int ReapplySelectionIntervalMs = 5000;
 
@@ -216,6 +217,43 @@ public class GeneratedWorkflowPage
         return capture.StatusCode;
     }
 
+    // Opens the page, then sends the Test Case's payload to the API as a form POST with the signed-in session,
+    // the same way the page's grids call it.
+    public async Task<int> GoToAndCaptureApiResponseStatusAsync(
+        string pageUrl,
+        string apiPathFragment,
+        IReadOnlyList<KeyValuePair<string, string>> payload)
+    {
+        await _page.GotoAsync(pageUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 60000,
+        });
+        return await CaptureApiResponseStatusAsync(apiPathFragment, payload);
+    }
+
+    // Sends the payload from the page that is currently open, for example after the Test Case's selections.
+    public async Task<int> CaptureApiResponseStatusAsync(
+        string apiPathFragment,
+        IReadOnlyList<KeyValuePair<string, string>> payload)
+    {
+        if (string.IsNullOrWhiteSpace(apiPathFragment))
+        {
+            throw new ArgumentException("API path fragment must be provided.", nameof(apiPathFragment));
+        }
+
+        ArgumentNullException.ThrowIfNull(payload);
+        var pageUrl = _page.Url;
+        var capture = await FetchApiResponseWithBrowserCookiesAsync(pageUrl, NormalizeApiPathFragment(apiPathFragment), payload);
+        TestContext.Progress.WriteLine(
+            $"Test {TestContext.CurrentContext.Test.Name}: sent POST {capture.RequestUrl} with payload " +
+            $"{capture.Payload} and received HTTP {capture.StatusCode}.");
+        await TryWaitForApiEvidencePageReadyAsync(pageUrl);
+        await RenderApiEvidencePanelAsync(capture);
+        await AttachApiEvidenceScreenshotAsync();
+        return capture.StatusCode;
+    }
+
     // Records the page's own calls to the API so the check can use the call made after the Test Case's
     // selections. The page may send it with a method or body that a standalone GET cannot reproduce.
     public void WatchApiCalls(string apiPathFragment)
@@ -302,7 +340,7 @@ public class GeneratedWorkflowPage
                 response.Status,
                 request.Url,
                 responseBody,
-                request.Method,
+                $"{request.Method} (sent by the page)",
                 selectionCount > 0 ? selections : null);
             await RenderApiEvidencePanelAsync(capture);
             await AttachApiEvidenceScreenshotAsync();
@@ -1509,6 +1547,366 @@ public class GeneratedWorkflowPage
         await locator.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
     }
 
+    private const string GridScriptHelpers =
+        """
+            const norm = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const isVisible = element => {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                const bounds = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0;
+            };
+            const widgetOf = element => window.kendo && window.jQuery ? window.kendo.widgetInstance(window.jQuery(element)) : null;
+            const titleOf = th => norm(th.getAttribute('data-title') || th.textContent);
+            const headerCells = grid => Array.from(grid.querySelectorAll('th')).filter(th => !th.closest('.k-filter-row'));
+            const gridOf = token => document.querySelector(`[data-automation-grid="${token}"]`);
+        """;
+
+    private const string LocateGridScript =
+        "({ featureName, token, columns }) => {" + GridScriptHelpers +
+        """
+            const name = norm(featureName);
+            const grids = Array.from(document.querySelectorAll('.k-grid')).filter(isVisible);
+            if (!grids.length) return { error: 'No grid is displayed on the page.' };
+            const headings = Array.from(document.querySelectorAll(
+                'h1, h2, h3, h4, h5, h6, legend, .ibox-title, .panel-heading, .card-header, .page-title'))
+                .filter(heading => isVisible(heading) && !heading.closest('.k-grid'));
+            const matches = headings.filter(heading => norm(heading.textContent) === name)
+                .concat(headings.filter(heading => norm(heading.textContent) !== name && norm(heading.textContent).includes(name)));
+            let grid = null;
+            let how = '';
+            for (const heading of matches) {
+                grid = grids.find(candidate => heading.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) || null;
+                if (grid) { how = `first grid after the '${heading.textContent.trim()}' heading`; break; }
+            }
+            if (!grid) {
+                grid = grids.find(candidate => columns.every(column => headerCells(candidate).some(th => titleOf(th) === norm(column)))) || null;
+                how = `no '${featureName}' heading found; first grid with the requested columns`;
+            }
+            if (!grid) return { error: `No '${featureName}' heading and no grid with the columns ${columns.join(', ')} were found.` };
+            grid.setAttribute('data-automation-grid', token);
+            const missing = columns.filter(column => !headerCells(grid).some(th => titleOf(th) === norm(column)));
+            return { how, gridId: grid.id || '', missing };
+        }
+        """;
+
+    private const string GridStateScript =
+        "({ token, field }) => {" + GridScriptHelpers +
+        """
+            const grid = gridOf(token);
+            const widget = grid ? widgetOf(grid) : null;
+            const dataSource = widget && widget.dataSource;
+            if (!dataSource) return { error: 'The grid has no Kendo data source.' };
+            const flatten = filter => !filter ? [] : filter.filters ? filter.filters.flatMap(flatten) : [filter];
+            const view = Array.prototype.slice.call(dataSource.view() || []);
+            return {
+                loading: !!dataSource._requestInProgress || Array.from(grid.querySelectorAll('.k-loading-mask')).some(isVisible),
+                rows: view.length,
+                total: Number(dataSource.total()) || 0,
+                pageSize: Number(dataSource.pageSize()) || 0,
+                page: Number(dataSource.page()) || 1,
+                filterFields: flatten(dataSource.filter()).map(filter => String(filter.field || '')),
+                values: field ? view.map(item => item[field] == null ? '' : String(item[field])) : [],
+            };
+        }
+        """;
+
+    private const string MarkGridFilterInputScript =
+        "({ token, title, marker }) => {" + GridScriptHelpers +
+        """
+            const grid = gridOf(token);
+            const header = headerCells(grid).find(th => titleOf(th) === norm(title));
+            if (!header) return { error: `The grid has no '${title}' column.` };
+            const field = header.getAttribute('data-field') || '';
+            let input = null;
+            if (field) {
+                const cell = Array.from(grid.querySelectorAll('.k-filter-row [data-field]')).find(element => element.getAttribute('data-field') === field);
+                input = cell ? Array.from(cell.querySelectorAll('input')).find(isVisible) || null : null;
+            }
+            if (!input) {
+                const index = Array.from(header.parentElement.children).indexOf(header);
+                const filterRow = header.closest('thead, table')?.querySelector('tr.k-filter-row') || grid.querySelector('tr.k-filter-row');
+                const cell = filterRow ? filterRow.children[index] : null;
+                input = cell ? Array.from(cell.querySelectorAll('input')).find(isVisible) || null : null;
+            }
+            if (!field) return { error: `The '${title}' column has no data field.` };
+            if (!input) return { error: `The '${title}' column has no filter box in the grid's filter row.` };
+            input.setAttribute('data-automation-filter', marker);
+            return { field };
+        }
+        """;
+
+    private const string MarkGridNextPageScript =
+        "({ token, marker }) => {" + GridScriptHelpers +
+        """
+            const grid = gridOf(token);
+            const pager = Array.from(grid.querySelectorAll('.k-pager-wrap, .k-pager, .k-grid-pager')).find(isVisible);
+            if (!pager) return { error: 'The grid has no visible pager.' };
+            const next = Array.from(pager.querySelectorAll('a, button')).find(element =>
+                /next\s+page/i.test(`${element.getAttribute('title') || ''} ${element.getAttribute('aria-label') || ''}`));
+            if (!next) return { error: "The grid's pager has no 'next page' button." };
+            const disabled = next.matches('.k-state-disabled, .k-disabled, [disabled]') || next.getAttribute('aria-disabled') === 'true';
+            next.setAttribute('data-automation-next-page', marker);
+            return { disabled, pagerText: (pager.textContent || '').replace(/\s+/g, ' ').trim() };
+        }
+        """;
+
+    // Checks a "Verify the <feature> feature" step: the grid under the feature's heading shows rows for the current
+    // selections, each named column filter narrows the rows to matching values, and the pager moves to the next page.
+    public async Task VerifyGridFeatureAsync(string featureName, IReadOnlyList<string> filterColumns, bool verifyPagination)
+    {
+        if (string.IsNullOrWhiteSpace(featureName))
+        {
+            throw new ArgumentException("Feature name must be provided.", nameof(featureName));
+        }
+
+        ArgumentNullException.ThrowIfNull(filterColumns);
+        var token = Guid.NewGuid().ToString("N");
+        var selections = _appliedSelections.Count > 0 ? string.Join("; ", _appliedSelections) : "none";
+        var located = await _page.EvaluateAsync<JsonElement>(
+            LocateGridScript,
+            new { featureName, token, columns = filterColumns.ToArray() });
+        if (located.TryGetProperty("error", out var locateError))
+        {
+            throw new InvalidOperationException($"'{featureName}' grid: {locateError.GetString()} Page: {_page.Url}.");
+        }
+
+        var missingColumns = located.GetProperty("missing").EnumerateArray().Select(item => item.GetString()).ToArray();
+        if (missingColumns.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"'{featureName}' grid ({located.GetProperty("how").GetString()}) has no column named {string.Join(", ", missingColumns)}.");
+        }
+
+        var gridLabel = $"'{featureName}' grid" + (located.GetProperty("gridId").GetString() is { Length: > 0 } id ? $" (#{id})" : string.Empty);
+        await _page.Locator($"[data-automation-grid='{token}']").ScrollIntoViewIfNeededAsync();
+        await WaitForPendingDataRequestsAsync($"before checking the {gridLabel}");
+
+        var (initial, loaded) = await WaitForGridStateAsync(token, null, state => state.Rows > 0);
+        if (!loaded)
+        {
+            throw new InvalidOperationException(
+                $"The {gridLabel} " +
+                (initial.Loading ? "was still loading its data" : "showed no records") +
+                $" after {DataSettleTimeoutMs} ms (selections: {selections}). " +
+                "Filtering and pagination cannot be checked without data; check the Test Case's selected options.");
+        }
+
+        var results = new List<string>
+        {
+            $"Grid: {featureName} — {located.GetProperty("how").GetString()}",
+            $"Selections: {selections}",
+            $"Displayed: {initial.Rows} rows on page {initial.Page} of {initial.Total} records",
+        };
+
+        for (var index = 0; index < filterColumns.Count; index++)
+        {
+            results.Add(await VerifyGridColumnFilterAsync(token, gridLabel, filterColumns[index], $"{token}-{index}"));
+        }
+
+        if (verifyPagination)
+        {
+            results.Add(await VerifyGridPaginationAsync(token, gridLabel));
+        }
+
+        foreach (var line in results)
+        {
+            TestContext.Progress.WriteLine($"Test {TestContext.CurrentContext.Test.Name}: {line}");
+        }
+
+        await AttachGridFeatureEvidenceAsync(token, results);
+    }
+
+    private async Task<string> VerifyGridColumnFilterAsync(string token, string gridLabel, string column, string marker)
+    {
+        var mark = await _page.EvaluateAsync<JsonElement>(MarkGridFilterInputScript, new { token, title = column, marker });
+        if (mark.TryGetProperty("error", out var markError))
+        {
+            throw new InvalidOperationException($"{gridLabel}: {markError.GetString()}");
+        }
+
+        var field = mark.GetProperty("field").GetString()!;
+        var (before, _) = await WaitForGridStateAsync(token, field, state => state.Rows > 0);
+        var sample = before.Values.Select(value => value.Trim()).FirstOrDefault(value => value.Length > 0)
+            ?? throw new InvalidOperationException($"{gridLabel}: the '{column}' column has no value to filter by on the current page.");
+
+        var input = _page.Locator($"[data-automation-filter='{marker}']");
+        await ApplyGridFilterTextAsync(input, sample);
+        var (filtered, applied) = await WaitForGridStateAsync(
+            token,
+            field,
+            state => state.FilterFields.Contains(field, StringComparer.OrdinalIgnoreCase));
+        if (!applied)
+        {
+            throw new InvalidOperationException(
+                $"{gridLabel}: typing '{sample}' in the '{column}' filter did not filter the grid within {DataSettleTimeoutMs} ms.");
+        }
+
+        var mismatches = filtered.Values
+            .Where(value => value.IndexOf(sample, StringComparison.OrdinalIgnoreCase) < 0)
+            .ToArray();
+        if (filtered.Rows == 0 || mismatches.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"{gridLabel}: filtering '{column}' by '{sample}' returned {filtered.Rows} rows" +
+                (mismatches.Length > 0 ? $", including values that do not contain it: {string.Join(", ", mismatches.Take(5))}." : "."));
+        }
+
+        await ApplyGridFilterTextAsync(input, string.Empty);
+        bool HasNoFilter(GridState state) => !state.FilterFields.Contains(field, StringComparer.OrdinalIgnoreCase);
+        var (_, cleared) = await WaitForGridStateAsync(token, field, HasNoFilter, GridFilterClearTimeoutMs);
+        if (!cleared)
+        {
+            var clearButton = _page.Locator(
+                $"[data-automation-grid='{token}'] .k-filter-row th:has([data-automation-filter='{marker}']) " +
+                ":is(button, a, span)[title='Clear'], " +
+                $"[data-automation-grid='{token}'] .k-filter-row th:has([data-automation-filter='{marker}']) .k-clear-value");
+            if (await clearButton.CountAsync() > 0 && await clearButton.First.IsVisibleAsync())
+            {
+                await clearButton.First.ClickAsync();
+                (_, cleared) = await WaitForGridStateAsync(token, field, HasNoFilter);
+            }
+        }
+
+        if (!cleared)
+        {
+            throw new InvalidOperationException($"{gridLabel}: clearing the '{column}' filter did not remove it.");
+        }
+
+        return $"Filter '{column}' contains '{sample}': {filtered.Total} records (was {before.Total}), all shown rows match; filter cleared";
+    }
+
+    private static async Task ApplyGridFilterTextAsync(ILocator input, string text)
+    {
+        await input.FillAsync(text);
+        await input.PressAsync("Enter");
+        // Leaving the box raises the filter's change event when Enter only closed the suggestion list.
+        await input.PressAsync("Tab");
+    }
+
+    private async Task<string> VerifyGridPaginationAsync(string token, string gridLabel)
+    {
+        var (state, _) = await WaitForGridStateAsync(token, null, current => current.Rows > 0);
+        var marker = Guid.NewGuid().ToString("N");
+        var pager = await _page.EvaluateAsync<JsonElement>(MarkGridNextPageScript, new { token, marker });
+        if (pager.TryGetProperty("error", out var pagerError))
+        {
+            throw new InvalidOperationException($"{gridLabel}: {pagerError.GetString()}");
+        }
+
+        if (state.Total <= state.PageSize || state.PageSize == 0)
+        {
+            return $"Pagination: pager shown ('{pager.GetProperty("pagerText").GetString()}'); only one page of " +
+                $"{state.Total} records with page size {state.PageSize}, so there is no next page to open";
+        }
+
+        if (pager.GetProperty("disabled").GetBoolean())
+        {
+            throw new InvalidOperationException(
+                $"{gridLabel}: {state.Total} records with page size {state.PageSize}, but the 'next page' button is disabled.");
+        }
+
+        var startPage = state.Page;
+        await _page.Locator($"[data-automation-next-page='{marker}']").ClickAsync();
+        var (next, moved) = await WaitForGridStateAsync(token, null, current => current.Page == startPage + 1 && current.Rows > 0);
+        if (!moved)
+        {
+            throw new InvalidOperationException(
+                $"{gridLabel}: clicking 'next page' did not show page {startPage + 1} within {DataSettleTimeoutMs} ms (still page {next.Page}, {next.Rows} rows).");
+        }
+
+        return $"Pagination: moved from page {startPage} to page {next.Page}, showing {next.Rows} of {next.Total} records";
+    }
+
+    private async Task<(GridState State, bool Satisfied)> WaitForGridStateAsync(
+        string token,
+        string? field,
+        Func<GridState, bool> condition,
+        int? timeoutMs = null)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs ?? DataSettleTimeoutMs);
+        DateTime? satisfiedSince = null;
+        while (true)
+        {
+            var element = await _page.EvaluateAsync<JsonElement>(GridStateScript, new { token, field });
+            if (element.TryGetProperty("error", out var error))
+            {
+                throw new InvalidOperationException($"Grid check failed: {error.GetString()}");
+            }
+
+            var state = new GridState(
+                element.GetProperty("loading").GetBoolean(),
+                element.GetProperty("rows").GetInt32(),
+                element.GetProperty("total").GetInt32(),
+                element.GetProperty("pageSize").GetInt32(),
+                element.GetProperty("page").GetInt32(),
+                element.GetProperty("filterFields").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray(),
+                element.GetProperty("values").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray());
+            var now = DateTime.UtcNow;
+            if (!state.Loading && condition(state))
+            {
+                satisfiedSince ??= now;
+                if ((now - satisfiedSince.Value).TotalMilliseconds >= DataSettleStableMs)
+                {
+                    return (state, true);
+                }
+            }
+            else
+            {
+                satisfiedSince = null;
+            }
+
+            if (now >= deadline)
+            {
+                return (state, false);
+            }
+
+            await Task.Delay(200);
+        }
+    }
+
+    private async Task AttachGridFeatureEvidenceAsync(string token, IReadOnlyList<string> lines)
+    {
+        await _page.EvaluateAsync(
+            """
+            ({ token, lines }) => {
+                document.getElementById('automation-grid-feature-evidence')?.remove();
+                const panel = document.createElement('aside');
+                panel.id = 'automation-grid-feature-evidence';
+                panel.setAttribute('aria-label', 'Grid feature evidence');
+                panel.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;'
+                    + 'background:white;color:#163a24;border:3px solid #22863a;border-radius:8px;'
+                    + 'padding:12px;max-width:460px;box-shadow:0 4px 16px #0003;'
+                    + 'font:13px Arial,sans-serif;overflow-wrap:anywhere;pointer-events:none;';
+                for (const text of ['Grid feature evidence (automation)', ...lines]) {
+                    const line = document.createElement('div');
+                    line.textContent = text;
+                    line.style.marginBottom = '6px';
+                    panel.appendChild(line);
+                }
+                document.body.appendChild(panel);
+                // Keep the grid and its pager in the lower part of the screenshot, below the panel.
+                document.querySelector(`[data-automation-grid="${token}"]`)?.scrollIntoView({ block: 'end' });
+            }
+            """,
+            new { token, lines });
+
+        var artifactDir = Path.Combine(TestContext.CurrentContext.WorkDirectory, "TestResults");
+        Directory.CreateDirectory(artifactDir);
+        var screenshotPath = Path.Combine(artifactDir, $"GridFeatureEvidence-{Guid.NewGuid():N}.png");
+        await _page.ScreenshotAsync(new PageScreenshotOptions { Path = screenshotPath });
+        TestContext.AddTestAttachment(screenshotPath, "Grid feature evidence");
+    }
+
+    private sealed record GridState(
+        bool Loading,
+        int Rows,
+        int Total,
+        int PageSize,
+        int Page,
+        string[] FilterFields,
+        string[] Values);
+
     private static string NormalizeApiPathFragment(string apiPathFragment)
     {
         var normalized = apiPathFragment.Trim();
@@ -1520,7 +1918,10 @@ public class GeneratedWorkflowPage
         return normalized;
     }
 
-    private async Task<ApiResponseCapture> FetchApiResponseWithBrowserCookiesAsync(string pageUrl, string apiPathFragment)
+    private async Task<ApiResponseCapture> FetchApiResponseWithBrowserCookiesAsync(
+        string pageUrl,
+        string apiPathFragment,
+        IReadOnlyList<KeyValuePair<string, string>>? payload = null)
     {
         var requestUri = BuildRequestUri(pageUrl, apiPathFragment);
         var cookieContainer = new CookieContainer();
@@ -1555,14 +1956,28 @@ public class GeneratedWorkflowPage
         };
         using var client = new HttpClient(handler);
         client.DefaultRequestHeaders.Add("Accept", "application/json, text/plain, */*");
-        using var response = await client.GetAsync(requestUri);
+        // The page's own jQuery/Kendo calls send this header; some MVC actions only answer AJAX requests.
+        client.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
+        if (payload is null)
+        {
+            using var getResponse = await client.GetAsync(requestUri);
+            return new ApiResponseCapture(
+                (int)getResponse.StatusCode,
+                requestUri.ToString(),
+                await getResponse.Content.ReadAsStringAsync(),
+                Method: "GET");
+        }
+
+        using var content = new FormUrlEncodedContent(payload);
+        using var response = await client.PostAsync(requestUri, content);
         var responseBody = await response.Content.ReadAsStringAsync();
 
         return new ApiResponseCapture(
             (int)response.StatusCode,
             requestUri.ToString(),
-            responseBody
-        );
+            responseBody,
+            Method: "POST (form data from the Test Case, sent with the signed-in session)",
+            Payload: string.Join("&", payload.Select(field => $"{field.Key}={field.Value}")));
     }
 
     internal static Uri BuildRequestUri(string pageUrl, string apiPathFragment)
@@ -1612,7 +2027,7 @@ public class GeneratedWorkflowPage
     {
         var responsePreview = BuildResponsePreview(capture.ResponseBody);
         await _page.EvaluateAsync(
-            @"({ requestUrl, statusCode, responsePreview, method, selections }) => {
+            @"({ requestUrl, statusCode, responsePreview, method, selections, payload }) => {
                 const panelId = 'copilot-api-evidence-panel';
                 let panel = document.getElementById(panelId);
                 if (!panel) {
@@ -1665,8 +2080,9 @@ public class GeneratedWorkflowPage
                     line.style.wordBreak = 'break-word';
                     panel.appendChild(line);
                 };
-                if (method) addLine('Method', `${method} (sent by the page)`);
+                if (method) addLine('Method', method);
                 if (selections) addLine('Selected before the call', selections);
+                if (payload !== null && payload !== undefined) addLine('Payload sent', payload || '<empty>');
 
                 const requestLabel = document.createElement('div');
                 requestLabel.textContent = 'Request URL:';
@@ -1701,6 +2117,7 @@ public class GeneratedWorkflowPage
                 responsePreview = responsePreview,
                 method = capture.Method,
                 selections = capture.Selections,
+                payload = capture.Payload,
             }
         );
     }
@@ -1822,7 +2239,8 @@ public class GeneratedWorkflowPage
         string RequestUrl,
         string ResponseBody,
         string? Method = null,
-        string? Selections = null);
+        string? Selections = null,
+        string? Payload = null);
 
     private sealed class ApiCallWatch(string path)
     {

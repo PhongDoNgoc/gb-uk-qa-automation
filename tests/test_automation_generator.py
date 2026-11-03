@@ -306,6 +306,147 @@ class AutomationGeneratorTests(unittest.TestCase):
         positions = [content.index(fragment) for fragment in ordered]
         self.assertEqual(positions, sorted(positions))
 
+    def _generate_single_case(self, case_id, title, steps_xml, data_source):
+        class FakeClient:
+            def get_suite_test_cases(self, plan_id, suite_id):
+                return [{"id": case_id, "title": title, "steps": steps_xml, "local_data_source": data_source}]
+
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td) / "QA.Regression.Automation"
+            project_dir.mkdir()
+            result = generate_automation_scripts(
+                client=FakeClient(), suite_file=None, plan_id=30985, suite_id=31681,
+                project_dir=str(project_dir),
+                namespace="QA.Regression.Automation.Tests.Generated", overwrite=False,
+            )
+            entry = result["generated"][0]
+            return entry, Path(entry["file_path"]).read_text(encoding="utf-8")
+
+    _PAYMENT_NAVIGATION_STEP = (
+        '<step id="2" type="ActionStep"><parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal'
+        '</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description /></step>'
+        '<step id="3" type="ValidateStep"><parameterizedString isformatted="true">Open Utilities sub-menu and click to Payment '
+        'Availability&lt;br&gt;URL @environment: baseURL/PaymentAvailability/PaymentAvailabilityIndex</parameterizedString>'
+        '<parameterizedString isformatted="true">User is navigated to Payment Availability page</parameterizedString>'
+        '<description /></step>'
+    )
+
+    def test_api_status_case_posts_the_payload_from_the_test_case(self):
+        steps_xml = (
+            '<steps id="0" last="4">' + self._PAYMENT_NAVIGATION_STEP
+            + '<step id="4" type="ValidateStep"><parameterizedString isformatted="true">Verify GetPagingRecords API response status:'
+            '&lt;br&gt;- Request URL @environment = baseURL/PaymentAvailability/GetPagingRecords&lt;br&gt;In API payload, input:'
+            '&lt;br&gt;sort: blank&lt;br&gt;page : 1&lt;br&gt;pageSize : 50&lt;br&gt;filter: (Email~doesnotcontain~\'endeco\')'
+            '&lt;br&gt;Period : @period&lt;br&gt;CountryId : @countryid</parameterizedString>'
+            '<parameterizedString isformatted="true">Status Code should be 200 OK</parameterizedString><description /></step>'
+            '</steps>'
+        )
+        data_source = """<NewDataSet>
+<Table1><environment>dev</environment><period>2024-08-01T00:00:00.000Z</period><countryid>4</countryid></Table1>
+<Table1><environment>stage</environment><period>2026-09-01T00:00:00.000Z</period><countryid>2</countryid></Table1>
+</NewDataSet>"""
+
+        entry, content = self._generate_single_case(
+            "33988", "Payment Availability - Verify GetPagingRecords API is working", steps_xml, data_source)
+
+        self.assertEqual(entry["strategy"], "authenticated-api-status")
+        self.assertIn('"/PaymentAvailability/GetPagingRecords"', content)
+        self.assertNotIn("payload, input", content.split("var payload")[0].lower())
+        self.assertIn('new("sort", ""),', content)
+        self.assertIn('new("page", "1"),', content)
+        self.assertIn('new("pageSize", "50"),', content)
+        self.assertIn('new("filter", "(Email~doesnotcontain~\'endeco\')"),', content)
+        self.assertIn(
+            'new("Period", TestEnvironmentSettings.ResolveEnvironmentSpecificValue(new Dictionary<string, string> '
+            '{ ["DEV"] = "2024-08-01T00:00:00.000Z", ["STAGE"] = "2026-09-01T00:00:00.000Z", })),',
+            content,
+        )
+        self.assertIn('new("CountryId", ', content)
+        self.assertIn("GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment, payload)", content)
+        self.assertNotIn("TODO", content)
+
+    def test_api_status_case_accepts_equals_request_url_without_payload(self):
+        steps_xml = (
+            '<steps id="0" last="4">' + self._PAYMENT_NAVIGATION_STEP
+            + '<step id="4" type="ValidateStep"><parameterizedString isformatted="true">Verify GetEnergyServiceByCountryId API '
+            'response status:&lt;br&gt;- Request URL @environment = baseURL/PaymentAvailability/GetEnergyServiceByCountryId'
+            '?countryId=@countryid</parameterizedString><parameterizedString isformatted="true">Status Code should be 200 OK'
+            '</parameterizedString><description /></step></steps>'
+        )
+        data_source = """<NewDataSet>
+<Table1><environment>dev</environment><countryid>4</countryid></Table1>
+<Table1><environment>stage</environment><countryid>2</countryid></Table1>
+</NewDataSet>"""
+
+        entry, content = self._generate_single_case(
+            "33989", "Payment Availability - Verify GetEnergyServiceByCountryId API is working", steps_xml, data_source)
+
+        self.assertEqual(entry["strategy"], "authenticated-api-status")
+        self.assertIn("GetEnergyServiceByCountryId?countryId=4", content)
+        self.assertIn("GetEnergyServiceByCountryId?countryId=2", content)
+        self.assertNotIn("var payload", content)
+        self.assertNotIn("TODO", content)
+
+    def test_api_status_case_with_payload_and_selectors_posts_after_selecting(self):
+        steps_xml = (
+            '<steps id="0" last="5">' + self._PAYMENT_NAVIGATION_STEP
+            + '<step id="4" type="ActionStep"><parameterizedString isformatted="true">Select Country = @country, Period = @date '
+            'in the selectors</parameterizedString><parameterizedString isformatted="true"></parameterizedString><description />'
+            '</step><step id="5" type="ValidateStep"><parameterizedString isformatted="true">Verify GetUserAnalytics API response '
+            'status:&lt;br&gt;- Request URL = baseURL/PortalUsageReport/GetUserAnalytics&lt;br&gt;In API payload, input:'
+            '&lt;br&gt;toDate : @toDate</parameterizedString><parameterizedString isformatted="true">Status Code should be 200 OK'
+            '</parameterizedString><description /></step></steps>'
+        )
+        data_source = """<NewDataSet>
+<Table1><environment>stage</environment><country>IE</country><date>09/2026</date><toDate>January-2026</toDate></Table1>
+</NewDataSet>"""
+
+        _, content = self._generate_single_case(
+            "32059", "Portal Usage Report - Verify GetUserAnalytics API is working", steps_xml, data_source)
+
+        ordered = [
+            "await workflowPage.GoToAsync(targetPageUrl);",
+            'SelectOptionAsync("Country", ',
+            'SelectOptionAsync("Period", ',
+            "CaptureApiResponseStatusAsync(apiPathFragment, payload)",
+        ]
+        positions = [content.index(fragment) for fragment in ordered]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn(
+            'new("toDate", TestEnvironmentSettings.ResolveEnvironmentSpecificValue(new Dictionary<string, string> '
+            '{ ["STAGE"] = "January-2026", })),',
+            content,
+        )
+        self.assertNotIn("GoToAndCaptureApiResponseStatusAsync", content)
+
+    def test_multi_selection_step_selects_each_selector_and_grid_feature_is_verified(self):
+        steps_xml = (
+            '<steps id="0" last="5">' + self._PAYMENT_NAVIGATION_STEP
+            + '<step id="4" type="ActionStep"><parameterizedString isformatted="true">Select Country = @country, Energy Service = '
+            '@energyservice, Period = @date and Select Issue Type = @issuetype in the selectors</parameterizedString>'
+            '<parameterizedString isformatted="true"></parameterizedString><description /></step>'
+            '<step id="5" type="ValidateStep"><parameterizedString isformatted="true">Verify the view Summary Table feature'
+                        '</parameterizedString><parameterizedString isformatted="true">Summary Table should be displayed and functioning '
+                        'correctly (filter by Root Name, Site Name, Segment Name, pagination)</parameterizedString><description /></step></steps>'
+        )
+        data_source = """<NewDataSet>
+<Table1><environment>stage</environment><country>IE</country><energyservice>All</energyservice><date>09/2026</date><issuetype>All</issuetype></Table1>
+</NewDataSet>"""
+
+        _, content = self._generate_single_case(
+            "31858", "Payment Availability - Verify Summary Table feature", steps_xml, data_source)
+
+        ordered = [
+            'SelectOptionAsync("Country", ',
+            'SelectOptionAsync("Energy Service", ',
+            'SelectOptionAsync("Period", ',
+            'SelectOptionAsync("Select Issue Type", ',
+            'await workflowPage.VerifyGridFeatureAsync("Summary Table", '
+            'new string[] { "Root Name", "Site Name", "Segment Name" }, verifyPagination: true);',
+        ]
+        positions = [content.index(fragment) for fragment in ordered]
+        self.assertEqual(positions, sorted(positions))
+
     def test_navigation_menu_item_is_read_from_url_steps(self):
         for action, expected in (
             ("Open Utilities sub-menu and click to Portal Usage Report URL @environment : baseURL/PortalUsageReport",
