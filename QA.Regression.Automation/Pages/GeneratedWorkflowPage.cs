@@ -20,6 +20,13 @@ public class GeneratedWorkflowPage
     internal int DataSettleTimeoutMs { get; init; } = 60000;
     internal int ApiCallTimeoutMs { get; init; } = 45000;
     internal int SelectorOptionsTimeoutMs { get; init; } = 30000;
+    internal int DependentOptionsTimeoutMs { get; init; } = 90000;
+    internal int PendingRequestIgnoreAfterMs { get; init; } = 30000;
+    private const int DataRequestQuietMs = 500;
+    private const int ReapplySelectionIntervalMs = 5000;
+
+    private readonly Dictionary<IRequest, DateTime> _pendingDataRequests = new();
+    private (ILocator Control, string Label)? _lastNativeSelection;
 
     private readonly List<string> _appliedSelections = new();
     private int _selectionCount;
@@ -68,6 +75,72 @@ public class GeneratedWorkflowPage
     public GeneratedWorkflowPage(IPage page)
     {
         _page = page;
+        _page.Request += (_, request) =>
+        {
+            if (IsDataRequest(request))
+            {
+                lock (_pendingDataRequests)
+                {
+                    _pendingDataRequests[request] = DateTime.UtcNow;
+                }
+            }
+        };
+        _page.RequestFinished += (_, request) => ForgetDataRequest(request);
+        _page.RequestFailed += (_, request) => ForgetDataRequest(request);
+    }
+
+    private static bool IsDataRequest(IRequest request) =>
+        request.ResourceType is "xhr" or "fetch";
+
+    private void ForgetDataRequest(IRequest request)
+    {
+        lock (_pendingDataRequests)
+        {
+            _pendingDataRequests.Remove(request);
+        }
+    }
+
+    // Waits until the page's own XHR/fetch calls (for example the lists that later fill dependent selectors)
+    // have finished. Requests running longer than PendingRequestIgnoreAfterMs are treated as polling and ignored.
+    private async Task WaitForPendingDataRequestsAsync(string reason)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(DataSettleTimeoutMs);
+        DateTime? quietSince = null;
+        while (true)
+        {
+            var now = DateTime.UtcNow;
+            string[] pending;
+            lock (_pendingDataRequests)
+            {
+                pending = _pendingDataRequests
+                    .Where(entry => (now - entry.Value).TotalMilliseconds < PendingRequestIgnoreAfterMs)
+                    .Select(entry => $"{entry.Key.Method} {entry.Key.Url}")
+                    .ToArray();
+            }
+
+            if (pending.Length == 0)
+            {
+                quietSince ??= now;
+                if ((now - quietSince.Value).TotalMilliseconds >= DataRequestQuietMs)
+                {
+                    return;
+                }
+            }
+            else
+            {
+                quietSince = null;
+            }
+
+            if (now >= deadline)
+            {
+                TestContext.Progress.WriteLine(
+                    $"Test {TestContext.CurrentContext.Test.Name}: page data requests were still running {reason} " +
+                    $"after {DataSettleTimeoutMs} ms; continuing. Pending: {string.Join(", ", pending)}");
+                return;
+            }
+
+            await Task.Delay(100);
+        }
     }
 
     public async Task GoToAsync(string url, string? menuItem = null)
@@ -531,6 +604,7 @@ public class GeneratedWorkflowPage
                 nameof(optionText));
         }
 
+        await WaitForPendingDataRequestsAsync($"before selecting '{optionText}' in '{fieldLabel}'");
         var control = await FindLabelledControlAsync(fieldLabel);
         await control.ScrollIntoViewIfNeededAsync();
         var kind = await control.EvaluateAsync<string>(
@@ -565,6 +639,7 @@ public class GeneratedWorkflowPage
 
         _appliedSelections.Add($"{fieldLabel} = {optionText}");
         Interlocked.Increment(ref _selectionCount);
+        _lastNativeSelection = kind == "select" ? (control, fieldLabel) : null;
         TestContext.Progress.WriteLine(
             $"Test {TestContext.CurrentContext.Test.Name}: selected '{optionText}' in '{fieldLabel}' selector.");
         await WaitForSelectionDataSettledAsync(fieldLabel);
@@ -776,7 +851,11 @@ public class GeneratedWorkflowPage
     private async Task SelectNativeOptionAsync(ILocator control, string fieldLabel, string optionText)
     {
         // Options are often filled by an AJAX call after the page loads, so keep checking until the option appears.
-        var deadline = DateTime.UtcNow.AddMilliseconds(SelectorOptionsTimeoutMs);
+        // A selector that stays empty may depend on the previous selection, which the page only applies on change;
+        // if that change happened before the page's data arrived, re-apply it as a user would.
+        var started = DateTime.UtcNow;
+        var lastReapply = started;
+        var reapplied = 0;
         string[][] options;
         int index;
         while (true)
@@ -789,9 +868,28 @@ public class GeneratedWorkflowPage
                 index = ChooseOptionIndex(options.Select(option => option[0]).ToList(), optionText);
             }
 
-            if (index >= 0 || DateTime.UtcNow >= deadline)
+            var elapsed = (DateTime.UtcNow - started).TotalMilliseconds;
+            var limit = options.Length == 0 && _lastNativeSelection is not null
+                ? Math.Max(SelectorOptionsTimeoutMs, DependentOptionsTimeoutMs)
+                : SelectorOptionsTimeoutMs;
+            if (index >= 0 || elapsed >= limit)
             {
                 break;
+            }
+
+            if (options.Length == 0
+                && _lastNativeSelection is { } previous
+                && (DateTime.UtcNow - lastReapply).TotalMilliseconds >= ReapplySelectionIntervalMs)
+            {
+                await WaitForPendingDataRequestsAsync($"before re-applying '{previous.Label}'");
+                await previous.Control.EvaluateAsync(
+                    "select => { select.dispatchEvent(new Event('input', { bubbles: true })); select.dispatchEvent(new Event('change', { bubbles: true })); }");
+                reapplied++;
+                lastReapply = DateTime.UtcNow;
+                TestContext.Progress.WriteLine(
+                    $"Test {TestContext.CurrentContext.Test.Name}: '{fieldLabel}' selector had no options; " +
+                    $"re-applied the '{previous.Label}' selection so the page reloads it (attempt {reapplied}).");
+                continue;
             }
 
             await Task.Delay(250);
@@ -799,9 +897,13 @@ public class GeneratedWorkflowPage
 
         if (index < 0)
         {
+            var waited = (int)(DateTime.UtcNow - started).TotalMilliseconds;
+            var hint = options.Length == 0 && _lastNativeSelection is { } last
+                ? $" The page did not fill it after the '{last.Label}' selection was re-applied {reapplied} time(s)."
+                : string.Empty;
             throw new InvalidOperationException(
-                $"Option '{optionText}' was not found in the '{fieldLabel}' selector within {SelectorOptionsTimeoutMs} ms. " +
-                $"Available options: {(options.Length == 0 ? "none" : string.Join(", ", options.Select(option => $"'{option[1]}'")))}.");
+                $"Option '{optionText}' was not found in the '{fieldLabel}' selector within {waited} ms. " +
+                $"Available options: {(options.Length == 0 ? "none" : string.Join(", ", options.Select(option => $"'{option[1]}'")))}.{hint}");
         }
 
         await control.SelectOptionAsync(new SelectOptionValue { Index = index });

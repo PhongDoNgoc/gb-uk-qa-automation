@@ -380,9 +380,40 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         Assert.That(exception.Message, Does.Contain("Customer = Americold"));
     }
 
-    // Mirrors diagnostics-history.js: customers load asynchronously, the sessions API only accepts POST,
-    // and the page re-posts the current filter on a refresh timer.
-    private async Task RouteDiagnosticsHistoryPageAsync(string origin, bool callsApi)
+    [Test]
+    public async Task SelectOptionAsyncWaitsForPendingPageDataBeforeSelecting()
+    {
+        await RouteDiagnosticsHistoryPageAsync("https://diagnostics-sites.example.test/", callsApi: true, sitesDelayMs: 2500);
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await workflowPage.GoToAsync("https://diagnostics-sites.example.test/Diagnostics/History");
+        await workflowPage.SelectOptionAsync("Customer", "Americold");
+        await workflowPage.SelectOptionAsync("Site", "All");
+
+        Assert.That(await Page.EvaluateAsync<int>("() => window.customerChanges"), Is.EqualTo(1),
+            "The customer should be selected once, after the sites request finished, without needing a re-apply.");
+    }
+
+    [Test]
+    public async Task SelectOptionAsyncReappliesThePreviousSelectionWhenADependentSelectorStaysEmpty()
+    {
+        await RouteDiagnosticsHistoryPageAsync(
+            "https://diagnostics-late-sites.example.test/", callsApi: true, sitesDelayMs: 0, sitesWithoutRequestMs: 3000);
+        var workflowPage = new GeneratedWorkflowPage(Page);
+
+        await workflowPage.GoToAsync("https://diagnostics-late-sites.example.test/Diagnostics/History");
+        await workflowPage.SelectOptionAsync("Customer", "Americold");
+        await workflowPage.SelectOptionAsync("Site", "Dock 2");
+
+        Assert.That(await Page.Locator("#site-dropdown").InputValueAsync(), Is.EqualTo("22"));
+        Assert.That(await Page.Locator("#customer-dropdown").InputValueAsync(), Is.EqualTo("7"));
+    }
+
+    // Mirrors diagnostics-history.js: customers load asynchronously, the site list is only filled from
+    // already-loaded sites when the customer changes, the sessions API only accepts POST, and the page
+    // re-posts the current filter on a refresh timer.
+    private async Task RouteDiagnosticsHistoryPageAsync(
+        string origin, bool callsApi, int sitesDelayMs = 0, int sitesWithoutRequestMs = -1)
     {
         var page = """
             <h2>Diagnostics</h2>
@@ -394,31 +425,58 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
             <script>
               const callsApi = CALLS_API;
               const filter = { customer: null, site: null };
+              let sites = [];
+              window.siteFills = 0;
+              window.customerChanges = 0;
+              const allSites = [{ id: '21', name: 'Dock 1', customer: '7' }, { id: '22', name: 'Dock 2', customer: '7' }];
               const post = () => callsApi && fetch('/Diagnostics/GetAllDiagnosticsSessions', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(filter) });
               post();
+              if (SITES_WITHOUT_REQUEST_MS >= 0) setTimeout(() => { sites = allSites; }, SITES_WITHOUT_REQUEST_MS);
+              else fetch('/Common/GetSites').then(response => response.json()).then(result => { sites = result; });
               setTimeout(() => {
                 document.getElementById('customer-dropdown').innerHTML =
                   "<option value='3'>ABP</option><option value='7'>Americold</option>";
-              }, 800);
+              }, 300);
               document.getElementById('customer-dropdown').addEventListener('change', event => {
+                window.customerChanges++;
                 filter.customer = event.target.value;
                 filter.site = '-1';
-                document.getElementById('site-dropdown').innerHTML =
-                  "<option value='-1'>All</option><option value='21'>Dock 1</option><option value='22'>Dock 2</option>";
+                const matching = sites.filter(site => site.customer === filter.customer);
+                const select = document.getElementById('site-dropdown');
+                select.innerHTML = '';
+                if (matching.length > 0) {
+                  window.siteFills++;
+                  select.innerHTML = "<option value='-1'>All</option>"
+                    + matching.map(site => `<option value='${site.id}'>${site.name}</option>`).join('');
+                }
               });
               document.getElementById('site-dropdown').addEventListener('change', event => { filter.site = event.target.value; });
               setInterval(() => { if (filter.customer !== null) post(); }, 1000);
             </script>
-            """.Replace("CALLS_API", callsApi ? "true" : "false");
+            """
+            .Replace("CALLS_API", callsApi ? "true" : "false")
+            .Replace("SITES_WITHOUT_REQUEST_MS", sitesWithoutRequestMs.ToString());
 
         await Page.RouteAsync(origin + "**", async route =>
         {
-            if (new Uri(route.Request.Url).AbsolutePath == "/Diagnostics/GetAllDiagnosticsSessions")
+            var path = new Uri(route.Request.Url).AbsolutePath;
+            if (path == "/Diagnostics/GetAllDiagnosticsSessions")
             {
                 await route.FulfillAsync(route.Request.Method == "POST"
                     ? new RouteFulfillOptions { ContentType = "application/json", Body = route.Request.PostData ?? "null" }
                     : new RouteFulfillOptions { Status = 405 });
+                return;
+            }
+
+            if (path == "/Common/GetSites")
+            {
+                await Task.Delay(sitesDelayMs);
+                await route.FulfillAsync(new RouteFulfillOptions
+                {
+                    ContentType = "application/json",
+                    Body = "[{\"id\":\"21\",\"name\":\"Dock 1\",\"customer\":\"7\"},{\"id\":\"22\",\"name\":\"Dock 2\",\"customer\":\"7\"}]",
+                });
                 return;
             }
 
