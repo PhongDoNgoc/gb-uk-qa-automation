@@ -977,11 +977,13 @@ def _extract_grid_feature(step: SuiteStep) -> tuple[str, list[str], bool] | None
     expected = re.sub(r"\s+", " ", step.expected).strip()
     if not action or not re.search(r"\bdisplayed\b", expected, re.I):
         return None
+    feature = re.sub(r"^view\s+", "", action.group("feature"), flags=re.I).strip()
     checks = _GRID_FEATURE_CHECKS.search(expected)
     if not checks or not re.search(r"\b(?:filter|pagination|paging)\b", expected, re.I):
+        if feature and not re.search(r"\b(?:filter|pagination|paging)\b", expected, re.I):
+            return feature, [], False
         return None
 
-    feature = re.sub(r"^view\s+", "", action.group("feature"), flags=re.I).strip()
     filter_columns: list[str] = []
     verify_pagination = False
     for item in re.split(r"\s*,\s*|\s+and\s+", checks.group("checks")):

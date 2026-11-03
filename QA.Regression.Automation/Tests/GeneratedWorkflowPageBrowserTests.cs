@@ -681,6 +681,29 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         Assert.That(await Page.EvaluateAsync<int>("() => document.getElementById('SummaryTablePayment').widget.dataSource.page()"), Is.EqualTo(2));
     }
 
+    [TestCase("Payment Availability", "grid")]
+    [TestCase("Summary Table", "SummaryTablePayment")]
+    public async Task VerifyGridFeatureDisplayOnlyAttachesEvidenceWithoutFilteringOrPagination(string feature, string gridId)
+    {
+        await Page.SetContentAsync(BuildGridFeaturePage(filtersWork: true));
+        await new GeneratedWorkflowPage(Page).VerifyGridFeatureAsync(feature, Array.Empty<string>(), verifyPagination: false);
+
+        Assert.That(await Page.GetAttributeAsync($"#{gridId}", "data-automation-grid"), Is.Not.Null);
+        foreach (var id in new[] { "grid", "SummaryTablePayment" })
+        {
+            Assert.That(await Page.EvaluateAsync<int>(
+                "id => document.getElementById(id).widget.dataSource.page()", id), Is.EqualTo(1));
+            Assert.That(await Page.EvaluateAsync<int>(
+                "id => document.getElementById(id).widget.dataSource.filterCount()", id), Is.Zero);
+        }
+        Assert.That(await Page.Locator("[data-automation-filter], [data-automation-next-page]").CountAsync(), Is.Zero);
+        var evidence = await Page.Locator("#automation-grid-feature-evidence").InnerTextAsync();
+        Assert.That(evidence, Does.Contain($"Grid: {feature}"));
+        Assert.That(evidence, Does.Contain("Displayed: 50 rows on page 1 of 120 records"));
+        Assert.That(evidence, Does.Not.Contain("Filter '"));
+        Assert.That(evidence, Does.Not.Contain("Pagination:"));
+    }
+
     [Test]
     public async Task VerifyGridFeatureWaitsLongerForSummaryLoadingFilteringClearingAndPagination()
     {

@@ -485,6 +485,39 @@ class AutomationGeneratorTests(unittest.TestCase):
         positions = [content.index(fragment) for fragment in ordered]
         self.assertEqual(positions, sorted(positions))
 
+    def test_payment_availability_view_only_steps_do_not_filter_or_paginate(self):
+        for case_id, feature, expected, with_selectors in (
+            ("31856", "Payment Availability", "Payment Availability table of the selected options should be displayed", True),
+            ("31858", "Summary Table", "Summary Table should be displayed", False),
+        ):
+            with self.subTest(case_id=case_id):
+                selection_step = (
+                    '<step id="4" type="ActionStep"><parameterizedString isformatted="true">'
+                    'Select Country = @country, Energy Service = @energyservice, Period = @period, '
+                    'Select Issue Type = @issuetype in the selectors</parameterizedString>'
+                    '<parameterizedString isformatted="true"></parameterizedString><description /></step>'
+                ) if with_selectors else ""
+                steps_xml = (
+                    '<steps id="0" last="5">' + self._PAYMENT_NAVIGATION_STEP + selection_step
+                    + '<step id="5" type="ValidateStep"><parameterizedString isformatted="true">'
+                    f'&lt;div&gt;&lt;p&gt;Verify the view {feature} feature&lt;/p&gt;&lt;/div&gt;'
+                    '</parameterizedString><parameterizedString isformatted="true">'
+                    f'&lt;p&gt;{expected}&lt;/p&gt;</parameterizedString><description /></step></steps>'
+                )
+                data_source = (
+                    "<NewDataSet><Table1><environment>stage</environment><country>IE</country>"
+                    "<energyservice>All</energyservice><period>09/2026</period><issuetype>All</issuetype>"
+                    "</Table1></NewDataSet>"
+                ) if with_selectors else ""
+                _, content = self._generate_single_case(case_id, f"Verify View {feature}", steps_xml, data_source)
+                self.assertIn(
+                    f'await workflowPage.VerifyGridFeatureAsync("{feature}", '
+                    'new string[] {  }, verifyPagination: false);', content)
+                self.assertEqual(content.count("SelectOptionAsync("), 4 if with_selectors else 0)
+                self.assertNotIn("verifyPagination: true", content)
+                self.assertNotIn("Root Name", content)
+                self.assertNotIn(f"TODO: Translate expected result manually: {expected}", content)
+
     def test_navigation_menu_item_is_read_from_url_steps(self):
         for action, expected in (
             ("Open Utilities sub-menu and click to Portal Usage Report URL @environment : baseURL/PortalUsageReport",
