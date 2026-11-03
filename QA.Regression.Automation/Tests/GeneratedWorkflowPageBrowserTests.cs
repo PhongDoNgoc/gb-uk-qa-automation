@@ -533,6 +533,42 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         Assert.That(evidence, Does.Contain("Status: 200"));
     }
 
+    [TestCase("LoadSiteProfile")]
+    [TestCase("LoadCollectorSchedulingGrid")]
+    public async Task CollectorRunApiEvidenceKeepsThePortalPageAndLimitsTheResponsePreview(string api)
+    {
+        var responseBody = "[" + string.Join(",\n", Enumerable.Range(0, 10000)
+            .Select(index => $"{{\"SiteId\":{index},\"Name\":\"Collector site {index}\"}}")) + "]";
+        using var server = new LocalHttpServer(request =>
+            request.Path == "/CollectorScheduling/CollectorScheduling"
+                ? (200, "text/html",
+                    "<nav>Utilities <a href='/CollectorScheduling/CollectorScheduling'>Collector Run</a></nav>"
+                    + "<h2>Collector Scheduling</h2><table><tbody><tr><td>Collector site 0</td></tr></tbody></table>", null)
+                : request.Path == $"/CollectorScheduling/{api}"
+                    ? (200, "application/json", responseBody, null)
+                    : (404, "text/plain", "Not found", null));
+
+        var status = await new GeneratedWorkflowPage(Page).GoToAndCaptureApiResponseStatusAsync(
+            server.Url("/CollectorScheduling/CollectorScheduling"), $"/CollectorScheduling/{api}");
+
+        Assert.That(status, Is.EqualTo(200));
+        Assert.That(new Uri(Page.Url).AbsolutePath, Is.EqualTo("/CollectorScheduling/CollectorScheduling"));
+        Assert.That(await Page.GetByRole(AriaRole.Heading, new() { Name = "Collector Scheduling" }).IsVisibleAsync(), Is.True);
+        var panel = Page.Locator("#copilot-api-evidence-panel");
+        Assert.That(await panel.IsVisibleAsync(), Is.True);
+        var evidence = await panel.InnerTextAsync();
+        Assert.That(evidence, Does.Contain("Status: 200"));
+        Assert.That(evidence, Does.Contain("Method: GET"));
+        Assert.That(evidence, Does.Contain($"/CollectorScheduling/{api}"));
+        Assert.That(evidence, Does.Contain("Collector site 0"));
+        Assert.That(evidence, Does.Not.Contain("Collector site 9999"));
+        Assert.That(evidence.Length, Is.LessThan(2200));
+        var screenshot = await Page.ScreenshotAsync(new() { FullPage = true });
+        var height = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(screenshot.AsSpan(20, 4));
+        var viewportHeight = await Page.EvaluateAsync<int>("() => window.innerHeight");
+        Assert.That(height, Is.EqualTo(viewportHeight), "The API response must not create a thousands-of-lines screenshot.");
+    }
+
     [Test]
     public void SummaryPaymentAvailabilityTimeoutOnlyExtendsTheSummaryEndpoint()
     {

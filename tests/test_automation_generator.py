@@ -365,6 +365,44 @@ class AutomationGeneratorTests(unittest.TestCase):
         self.assertIn("GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment, payload)", content)
         self.assertNotIn("TODO", content)
 
+    def test_collector_run_api_status_cases_keep_the_portal_page_for_evidence(self):
+        for case_id, api in (
+            ("31870", "LoadSiteProfile"),
+            ("31871", "LoadCollectorSchedulingGrid"),
+        ):
+            with self.subTest(case_id=case_id):
+                steps_xml = (
+                    '<steps id="0" last="4"><step id="2" type="ActionStep">'
+                    '<parameterizedString isformatted="true">Precondition:&lt;br&gt;- Logged in ViewPoint Portal'
+                    '</parameterizedString><parameterizedString isformatted="true">&lt;br&gt;</parameterizedString>'
+                    '<description /></step><step id="3" type="ValidateStep">'
+                    '<parameterizedString isformatted="true">Open Utilities sub-menu and click to Collector Run'
+                    '&lt;br&gt;URL: baseURL/CollectorScheduling/CollectorScheduling&lt;br&gt;&amp;nbsp;'
+                    '</parameterizedString><parameterizedString isformatted="true">'
+                    'User is navigated to Collector Scheduling page</parameterizedString><description /></step>'
+                    '<step id="4" type="ValidateStep"><parameterizedString isformatted="true">'
+                    f'Verify the {api} API status&lt;br&gt;Request URL: baseURL/CollectorScheduling/{api}'
+                    '</parameterizedString><parameterizedString isformatted="true">'
+                    'Status Code should be 200 OK&lt;br&gt;</parameterizedString><description /></step></steps>'
+                )
+                entry, content = self._generate_single_case(
+                    case_id,
+                    f"Collector Run - Verify {api} API in Collector Scheduling page is working, returning status 200",
+                    steps_xml,
+                    None,
+                )
+
+                self.assertEqual(entry["strategy"], "authenticated-api-status")
+                self.assertIn(
+                    'var targetPageUrl = TestEnvironmentSettings.ResolveUrlForEnvironment('
+                    '"/CollectorScheduling/CollectorScheduling");', content)
+                self.assertIn(f'var apiPathFragment = "/CollectorScheduling/{api}";', content)
+                self.assertIn(
+                    "GoToAndCaptureApiResponseStatusAsync(targetPageUrl, apiPathFragment)", content)
+                self.assertIn("Assert.That(actualStatusCode, Is.EqualTo(expectedStatusCode)", content)
+                self.assertNotIn("await workflowPage.GoToAsync(", content)
+                self.assertNotIn("TODO", content)
+
     def test_api_status_case_accepts_equals_request_url_without_payload(self):
         steps_xml = (
             '<steps id="0" last="4">' + self._PAYMENT_NAVIGATION_STEP

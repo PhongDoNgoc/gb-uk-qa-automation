@@ -1123,7 +1123,7 @@ def _is_authenticated_api_status_case(test_case: SuiteTestCase) -> bool:
     return (
         "precondition:" in all_text
         and "logged in viewpoint portal" in all_text
-        and "response status" in all_text
+        and re.search(r"\b(?:response|api)\s+status\b", all_text) is not None
         and "status code should be" in all_text
         and re.search(r"\brequest\s+url(?:\s*@environment)?\s*[:=]", all_text) is not None
     )
