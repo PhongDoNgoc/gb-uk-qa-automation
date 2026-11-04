@@ -193,7 +193,7 @@ The request URL may be written as `Request URL: baseURL/...` or `Request URL @en
 
 Several selectors can be set in one step: `Select Country = @country, Energy Service = @energyservice, Period = @period, Select Issue Type = @issuetype in the selectors`. Each `Label = value` pair becomes its own `SelectOptionAsync` call, in the order written.
 
-The slow Summary Payment Availability endpoint (`/PaymentAvailability/GetSummaryPaymentAvailability`) has a 5-minute request/response timeout, for both direct API requests and watched page calls. Its `SummaryTablePayment` grid also waits up to 5 minutes for initial records and each filter, filter-clear, or pagination reload. These are maximum waits, not fixed delays: checks continue as soon as the response arrives or the grid is ready. Other endpoints and grids retain their existing timeouts.
+The slow Summary Payment Availability endpoint (`/PaymentAvailability/GetSummaryPaymentAvailability`) has a 10-minute request/response timeout, for both direct API requests and watched page calls. Its `SummaryTablePayment` grid waits up to 5 minutes for initial records and each filter, filter-clear, or pagination reload. These are maximum waits, not fixed delays: checks continue as soon as the response arrives or the grid is ready. Other endpoints and grids retain their existing timeouts. A request exceeding the limit still fails; increasing the allowance does not guarantee application success.
 
 Display-only grid steps such as `Verify the view Summary Table feature` with `Summary Table should be displayed` check that the correct grid has finished loading and shows records, then attach `Grid feature evidence`. No column filters or pagination clicks are performed unless explicitly listed in the expected result. This applies to the updated Payment Availability view cases 31856 and 31858; selector steps are applied only when present in the Test Case.
 
@@ -205,6 +205,8 @@ Each executed UI test attaches:
 - a screenshot `.png`
 
 Failed tests label the image as `Failure screenshot`. Passed tests label it as `Test screenshot`.
+
+The Linux Test Plan pipeline also retains the original TRX files and evidence in the `test-plan-evidence` pipeline artifact. If the Test Results API rejects an attachment with HTTP 413, the runner logs the case, filename and byte count and uploads lossless 512-KiB binary parts to the same test result, followed by a `.reassemble.txt` file with instructions and a SHA256 checksum. Download the original from the pipeline artifact, or concatenate the parts as instructed before opening the trace/image. Remaining evidence uploads continue after successful splitting. Other upload errors, including a rejected part, remain explicit failures.
 
 For generated API status checks, the screenshot also includes an on-page evidence panel showing:
 

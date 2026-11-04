@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import os
 import platform
@@ -532,14 +533,62 @@ def _publish_attachments(
             point_id = int(point["id"])
             result_id = result_ids[point_id]
             for attachment in executions[test_case_id].attachments:
-                encoded = base64.b64encode(attachment.path.read_bytes()).decode("ascii")
-                client.add_test_result_attachment(
-                    run_id=run_id,
-                    result_id=result_id,
-                    file_name=attachment.path.name,
-                    stream=encoded,
-                    comment=attachment.comment,
-                )
+                data = attachment.path.read_bytes()
+
+                def upload(name: str, content: bytes, comment: str) -> None:
+                    logger.info(
+                        "Uploading evidence for Test Case %s, result %s: %s (%s bytes)",
+                        test_case_id, result_id, name, len(content),
+                    )
+                    try:
+                        client.add_test_result_attachment(
+                            run_id=run_id,
+                            result_id=result_id,
+                            file_name=name,
+                            stream=base64.b64encode(content).decode("ascii"),
+                            comment=comment,
+                        )
+                    except AzureDevOpsError as exc:
+                        raise AzureDevOpsError(
+                            f"Evidence upload failed for Test Case {test_case_id}, file '{name}' "
+                            f"({len(content)} bytes): {exc}",
+                            status_code=exc.status_code,
+                        ) from exc
+
+                try:
+                    upload(attachment.path.name, data, attachment.comment)
+                except AzureDevOpsError as exc:
+                    if exc.status_code != 413 or len(data) <= 512 * 1024:
+                        raise
+                    logger.warning(
+                        "HTTP 413 uploading Test Case %s evidence '%s' (%s bytes). "
+                        "Uploading lossless numbered parts; the original is also retained in pipeline evidence.",
+                        test_case_id, attachment.path.name, len(data),
+                    )
+                    part_names = []
+                    for index, offset in enumerate(range(0, len(data), 512 * 1024), 1):
+                        name = f"{attachment.path.name}.part{index:05d}"
+                        upload(name, data[offset:offset + 512 * 1024], f"Part {index}: {attachment.comment}")
+                        part_names.append(name)
+                    instructions = (
+                        f"Original file: {attachment.path.name}\n"
+                        f"Size: {len(data)} bytes\nSHA256: {hashlib.sha256(data).hexdigest()}\n\n"
+                        "Azure DevOps rejected the original upload with HTTP 413. No bytes were discarded.\n"
+                        "Download every part into an otherwise empty folder and concatenate in the order below.\n"
+                        "The parts are binary fragments, not individually openable ZIP/image files.\n\n"
+                        "Python (run in that folder):\n"
+                        "from pathlib import Path\n"
+                        f"names = {part_names!r}\n"
+                        f"with Path({attachment.path.name!r}).open('wb') as output:\n"
+                        "    for name in names:\n"
+                        "        output.write(Path(name).read_bytes())\n\n"
+                        "Alternatively download the original from the pipeline's test-plan-evidence artifact.\n"
+                    )
+                    upload(
+                        f"{attachment.path.name}.reassemble.txt",
+                        instructions.encode("utf-8"),
+                        "Instructions to restore the complete original evidence file",
+                    )
 
 
 def _reference_id(value: Any) -> int | None:

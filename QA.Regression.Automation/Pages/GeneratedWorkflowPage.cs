@@ -24,6 +24,7 @@ public class GeneratedWorkflowPage
     internal int PendingRequestIgnoreAfterMs { get; init; } = 30000;
     internal int GridFilterClearTimeoutMs { get; init; } = 15000;
     internal int SummaryPaymentAvailabilityTimeoutMs { get; init; } = 300000;
+    internal int SummaryPaymentAvailabilityApiTimeoutMs { get; init; } = 600000;
     private const int DataRequestQuietMs = 500;
     private const int ReapplySelectionIntervalMs = 5000;
 
@@ -97,7 +98,7 @@ public class GeneratedWorkflowPage
     internal int ResolveApiTimeoutMs(string apiPath, int defaultTimeoutMs) =>
         apiPath.Split('?', '#')[0].TrimEnd('/').EndsWith(
             "/PaymentAvailability/GetSummaryPaymentAvailability", StringComparison.OrdinalIgnoreCase)
-            ? SummaryPaymentAvailabilityTimeoutMs
+            ? SummaryPaymentAvailabilityApiTimeoutMs
             : defaultTimeoutMs;
 
     private void ForgetDataRequest(IRequest request)

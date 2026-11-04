@@ -580,8 +580,8 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
             "https://example.test/PaymentAvailability/GetSummaryPaymentAvailability",
         })
         {
-            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 100000), Is.EqualTo(300000));
-            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 45000), Is.EqualTo(300000));
+            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 100000), Is.EqualTo(600000));
+            Assert.That(workflowPage.ResolveApiTimeoutMs(path, 45000), Is.EqualTo(600000));
         }
 
         Assert.That(workflowPage.ResolveApiTimeoutMs("/PaymentAvailability/GetPagingRecords", 100000), Is.EqualTo(100000));
@@ -635,7 +635,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         var workflowPage = new GeneratedWorkflowPage(Page)
         {
             ApiCallTimeoutMs = 500,
-            SummaryPaymentAvailabilityTimeoutMs = 6000,
+            SummaryPaymentAvailabilityApiTimeoutMs = 6000,
         };
         workflowPage.WatchApiCalls("/PaymentAvailability/GetSummaryPaymentAvailability");
         await workflowPage.GoToAsync(origin + "/PaymentAvailability/PaymentAvailabilityIndex");

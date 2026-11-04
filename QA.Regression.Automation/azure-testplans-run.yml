@@ -193,6 +193,13 @@ jobs:
         VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
         VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
+    - task: PublishPipelineArtifact@1
+      displayName: Retain original Test Plan evidence
+      condition: always()
+      inputs:
+        targetPath: '$(Agent.TempDirectory)/TestResults'
+        artifact: test-plan-evidence
+
     - task: PublishTestResults@2
       displayName: Publish NUnit test results
       condition: always()

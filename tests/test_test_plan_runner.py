@@ -10,7 +10,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from azure_client import AzureConfig, AzureDevOpsClient, AzureDevOpsError
-from test_plan_runner import TestAttachment, TestExecution, _read_trx, execute_test_case, run_test_plan
+from test_plan_runner import TestAttachment, TestExecution, _publish_attachments, _read_trx, execute_test_case, run_test_plan
 
 
 class FakeAzureClient:
@@ -87,6 +87,57 @@ def _execution(outcome: str = "Passed", attachments: list[TestAttachment] | None
 
 
 class TestPlanRunnerTests(unittest.TestCase):
+    def test_oversized_evidence_is_split_losslessly_and_remaining_evidence_is_uploaded(self):
+        client = Mock()
+        accepted = []
+
+        def upload(**kwargs):
+            content = base64.b64decode(kwargs["stream"])
+            if len(content) > 512 * 1024:
+                raise AzureDevOpsError("HTTP 413", status_code=413)
+            accepted.append((kwargs["file_name"], content))
+
+        client.add_test_result_attachment.side_effect = upload
+        with tempfile.TemporaryDirectory() as td:
+            trace = Path(td) / "trace.zip"
+            original = bytes(range(256)) * 5000
+            trace.write_bytes(original)
+            screenshot = Path(td) / "screen.png"
+            screenshot.write_bytes(b"screenshot")
+            with self.assertLogs("test_plan_runner", level="WARNING") as logs:
+                _publish_attachments(
+                    client=client, run_id=456,
+                    cases=[{"test_case_id": 1, "points": [{"id": 101}]}],
+                    executions={1: _execution(attachments=[
+                        TestAttachment(trace, "Playwright trace"),
+                        TestAttachment(screenshot, "Test screenshot"),
+                    ])},
+                    result_ids={101: 700},
+                )
+            parts = [content for name, content in accepted if ".part" in name]
+            self.assertEqual(len(parts), 3)
+            self.assertEqual(b"".join(parts), original)
+            self.assertIn("HTTP 413", logs.output[0])
+            instructions = next(content for name, content in accepted if name.endswith(".reassemble.txt"))
+            self.assertIn(b"SHA256:", instructions)
+            self.assertEqual(accepted[-1], ("screen.png", b"screenshot"))
+            self.assertTrue(all(call.kwargs["result_id"] == 700 for call in client.add_test_result_attachment.call_args_list))
+
+    def test_attachment_failures_other_than_oversize_remain_explicit(self):
+        client = Mock()
+        client.add_test_result_attachment.side_effect = AzureDevOpsError("Forbidden", status_code=403)
+        with tempfile.TemporaryDirectory() as td:
+            image = Path(td) / "screen.png"
+            image.write_bytes(b"image")
+            with self.assertRaisesRegex(AzureDevOpsError, "Test Case 1.*screen.png.*Forbidden"):
+                _publish_attachments(
+                    client=client, run_id=456,
+                    cases=[{"test_case_id": 1, "points": [{"id": 101}]}],
+                    executions={1: _execution(attachments=[TestAttachment(image, "Screenshot")])},
+                    result_ids={101: 700},
+                )
+            self.assertEqual(client.add_test_result_attachment.call_count, 1)
+
     def test_test_plan_pipeline_generates_builds_and_associates_before_execution(self):
         pipeline = (Path(__file__).resolve().parents[1] / "QA.Regression.Automation"
                     / "azure-testplans-run.yml").read_text(encoding="utf-8")
