@@ -23,8 +23,7 @@ public class GeneratedWorkflowPage
     internal int DependentOptionsTimeoutMs { get; init; } = 90000;
     internal int PendingRequestIgnoreAfterMs { get; init; } = 30000;
     internal int GridFilterClearTimeoutMs { get; init; } = 15000;
-    internal int SummaryPaymentAvailabilityTimeoutMs { get; init; } = 300000;
-    internal int SummaryPaymentAvailabilityApiTimeoutMs { get; init; } = 600000;
+    internal int SummaryPaymentAvailabilityTimeoutMs { get; init; } = 600000;
     private const int DataRequestQuietMs = 500;
     private const int ReapplySelectionIntervalMs = 5000;
 
@@ -98,7 +97,7 @@ public class GeneratedWorkflowPage
     internal int ResolveApiTimeoutMs(string apiPath, int defaultTimeoutMs) =>
         apiPath.Split('?', '#')[0].TrimEnd('/').EndsWith(
             "/PaymentAvailability/GetSummaryPaymentAvailability", StringComparison.OrdinalIgnoreCase)
-            ? SummaryPaymentAvailabilityApiTimeoutMs
+            ? SummaryPaymentAvailabilityTimeoutMs
             : defaultTimeoutMs;
 
     private void ForgetDataRequest(IRequest request)
@@ -1701,7 +1700,7 @@ public class GeneratedWorkflowPage
                 $"The {gridLabel} " +
                 (initial.Loading ? "was still loading its data" : "showed no records") +
                 $" after {timeoutMs} ms (selections: {selections}). " +
-                "Filtering and pagination cannot be checked without data; check the Test Case's selected options.");
+                "The table must finish loading and show records; check the API response and the Test Case's selected options.");
         }
 
         var results = new List<string>

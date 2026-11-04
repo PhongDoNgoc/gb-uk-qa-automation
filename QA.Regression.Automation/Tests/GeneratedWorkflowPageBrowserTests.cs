@@ -573,6 +573,8 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
     public void SummaryPaymentAvailabilityTimeoutOnlyExtendsTheSummaryEndpoint()
     {
         var workflowPage = new GeneratedWorkflowPage(Page);
+        Assert.That(workflowPage.SummaryPaymentAvailabilityTimeoutMs, Is.EqualTo(600000),
+            "The summary grid must receive the same ten-minute allowance as its API in both pipelines.");
         foreach (var path in new[]
         {
             "/PaymentAvailability/GetSummaryPaymentAvailability",
@@ -635,7 +637,7 @@ public class GeneratedWorkflowPageBrowserTests : BaseTest
         var workflowPage = new GeneratedWorkflowPage(Page)
         {
             ApiCallTimeoutMs = 500,
-            SummaryPaymentAvailabilityApiTimeoutMs = 6000,
+            SummaryPaymentAvailabilityTimeoutMs = 6000,
         };
         workflowPage.WatchApiCalls("/PaymentAvailability/GetSummaryPaymentAvailability");
         await workflowPage.GoToAsync(origin + "/PaymentAvailability/PaymentAvailabilityIndex");
