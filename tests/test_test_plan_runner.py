@@ -87,6 +87,29 @@ def _execution(outcome: str = "Passed", attachments: list[TestAttachment] | None
 
 
 class TestPlanRunnerTests(unittest.TestCase):
+    def test_test_plan_pipeline_generates_builds_and_associates_before_execution(self):
+        pipeline = (Path(__file__).resolve().parents[1] / "QA.Regression.Automation"
+                    / "azure-testplans-run.yml").read_text(encoding="utf-8")
+        linux, windows = pipeline.split("  - job: RunTestPlanOnHosted", 1)
+        linux_commands = [
+            "python main.py generate-scripts",
+            "dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj",
+            "python main.py associate-scripts",
+            "python main.py run-test-plan",
+        ]
+        windows_commands = [
+            "python main.py generate-scripts",
+            "displayName: Build test project",
+            "python main.py associate-scripts",
+            "- task: VSTest@3",
+        ]
+        for branch, commands in ((linux, linux_commands), (windows, windows_commands)):
+            positions = [branch.index(command) for command in commands]
+            self.assertEqual(positions, sorted(positions))
+            self.assertIn("--overwrite-association", branch)
+            self.assertIn("AZDO_PLAN_ID: ${{ parameters.testPlan }}", branch)
+            self.assertIn("AZDO_SUITE_ID: ${{ parameters.testSuite }}", branch)
+
     def test_runs_only_automated_points_for_selected_configuration_and_updates_test_plan(self):
         client = FakeAzureClient(
             points=[
@@ -250,6 +273,50 @@ class TestPlanRunnerTests(unittest.TestCase):
         filter_index = command.index("--filter")
         self.assertEqual(command[filter_index + 1], f"FullyQualifiedName={fully_qualified_name}")
         self.assertEqual(execution.outcome, "Passed")
+
+    def test_reads_deployed_trx_attachments_for_the_correct_execution(self):
+        for separator in ("/", "\\"):
+            with self.subTest(separator=separator), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                files = root / "test-run" / "In" / "execution-1" / "agent"
+                files.mkdir(parents=True)
+                (files / "evidence.png").write_bytes(b"correct image")
+                (files / "trace.zip").write_bytes(b"correct trace")
+                other = root / "test-run" / "In" / "execution-2" / "agent"
+                other.mkdir(parents=True)
+                (other / "evidence.png").write_bytes(b"wrong image")
+                trx = root / "results.trx"
+                trx.write_text(
+                    '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">'
+                    '<TestSettings><Deployment runDeploymentRoot="test-run" /></TestSettings>'
+                    '<Results><UnitTestResult executionId="execution-1" outcome="Passed">'
+                    '<Output><ResultFiles>'
+                    f'<ResultFile path="agent{separator}evidence.png" />'
+                    f'<ResultFile path="agent{separator}trace.zip" />'
+                    '</ResultFiles></Output></UnitTestResult></Results></TestRun>',
+                    encoding="utf-8",
+                )
+                execution = _read_trx(trx, 0)
+                self.assertEqual(execution.outcome, "Passed")
+                self.assertEqual(
+                    [attachment.path.read_bytes() for attachment in execution.attachments],
+                    [b"correct image", b"correct trace"],
+                )
+
+    def test_missing_deployed_attachment_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trx = Path(temp_dir) / "results.trx"
+            trx.write_text(
+                '<TestRun><TestSettings><Deployment runDeploymentRoot="test-run" /></TestSettings>'
+                '<Results><UnitTestResult executionId="execution-1" outcome="Passed">'
+                '<Output><ResultFiles><ResultFile path="agent/missing.png" />'
+                '</ResultFiles></Output></UnitTestResult></Results></TestRun>',
+                encoding="utf-8",
+            )
+            with self.assertLogs("test_plan_runner", level="WARNING") as logs:
+                execution = _read_trx(trx, 0)
+            self.assertIn("missing test attachment", logs.output[0])
+            self.assertEqual(execution.attachments, [])
 
 
 class AzureClientResponseTests(unittest.TestCase):

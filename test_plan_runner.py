@@ -57,6 +57,11 @@ def run_test_plan(
         suite_id=suite_id,
         configuration_id=configuration_id,
     )
+    print(
+        f"Selected {len(cases)} automated test case(s) for plan {plan_id}, suite {suite_id}, "
+        f"configuration {configuration_id}; {skipped_points} non-automated test point(s) skipped.",
+        flush=True,
+    )
     point_ids = [int(point["id"]) for case in cases for point in case["points"]]
     results_path = Path(results_directory).resolve()
     results_path.mkdir(parents=True, exist_ok=True)
@@ -90,6 +95,12 @@ def run_test_plan(
                 test_project=project_path,
                 build_configuration=build_configuration,
                 results_directory=results_path,
+            )
+            execution = executions[test_case_id]
+            print(
+                f"Test Case {test_case_id}: {execution.outcome}"
+                + (f" - {execution.error_message}" if execution.error_message else ""),
+                flush=True,
             )
 
         result_ids = _publish_results(
@@ -304,6 +315,11 @@ def _read_trx(
     search_roots: list[Path] | None = None,
 ) -> TestExecution:
     root = ET.parse(trx_path).getroot()
+    deployment_root = next(
+        (element.get("runDeploymentRoot") for element in root.iter()
+         if _local_name(element.tag) == "Deployment"),
+        None,
+    )
     test_results = [element for element in root.iter() if _local_name(element.tag) == "UnitTestResult"]
     if not test_results:
         now = datetime.now(timezone.utc).isoformat()
@@ -354,12 +370,17 @@ def _read_trx(
                 attachment_path = str(element.get("path") or "").strip()
                 if not attachment_path:
                     continue
-                path = Path(attachment_path)
+                path = Path(attachment_path.replace("\\", "/"))
                 candidates = (
                     [path]
                     if path.is_absolute()
                     else [trx_path.parent / path, Path.cwd() / path, *[root / path for root in search_roots or []]]
                 )
+                if not path.is_absolute() and deployment_root and result.get("executionId"):
+                    candidates.insert(
+                        0,
+                        trx_path.parent / deployment_root / "In" / result.get("executionId") / path,
+                    )
                 found = next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
                 if found is None:
                     logger.warning("TRX references a missing test attachment: %s", attachment_path)

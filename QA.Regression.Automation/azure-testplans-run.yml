@@ -65,13 +65,6 @@ jobs:
         command: restore
         projects: QA.Regression.Automation/QA.Regression.Automation.csproj
 
-    - task: DotNetCoreCLI@2
-      displayName: Build test project
-      inputs:
-        command: build
-        projects: QA.Regression.Automation/QA.Regression.Automation.csproj
-        arguments: --configuration $(buildConfiguration) --no-restore
-
     - task: Bash@3
       displayName: Install Playwright dependencies and Chromium
       inputs:
@@ -128,7 +121,7 @@ jobs:
         VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
     - task: Bash@3
-      displayName: Run selected Azure Test Plan cases
+      displayName: Generate, build, associate and run Azure Test Plan cases
       inputs:
         targetType: inline
         script: |
@@ -164,7 +157,17 @@ jobs:
 
           source .venv/bin/activate
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m unittest tests.test_test_plan_runner
+          python -m unittest -b tests.test_test_plan_runner
+          python main.py generate-scripts \
+            --plan-id "$AZDO_PLAN_ID" \
+            --suite-id "$AZDO_SUITE_ID" \
+            --project-dir QA.Regression.Automation \
+            --overwrite
+          dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj \
+            --configuration "$BUILD_CONFIGURATION" --no-restore
+          python main.py associate-scripts \
+            --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json" \
+            --overwrite-association
           python main.py run-test-plan \
             --plan-id "$AZDO_PLAN_ID" \
             --suite-id "$AZDO_SUITE_ID" \
@@ -206,6 +209,31 @@ jobs:
     pool:
       vmImage: windows-latest
     steps:
+    - task: UsePythonVersion@0
+      displayName: Use Python 3
+      inputs:
+        versionSpec: '3.x'
+
+    - task: PowerShell@2
+      displayName: Fetch latest Test Plans cases and generate automation
+      inputs:
+        targetType: inline
+        script: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:AZDO_PAT) -or $env:AZDO_PAT.StartsWith('$(')) {
+            throw 'Azure pipeline secret variable AZDO_PAT is required for Test Plans API access.'
+          }
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Installing Python dependencies failed.' }
+          python main.py generate-scripts --plan-id "$env:AZDO_PLAN_ID" --suite-id "$env:AZDO_SUITE_ID" --project-dir QA.Regression.Automation --overwrite
+          if ($LASTEXITCODE -ne 0) { throw 'Generating Test Plan scripts failed.' }
+      env:
+        AZDO_ORG: $(AZDO_ORG)
+        AZDO_PROJECT: $(AZDO_PROJECT)
+        AZDO_PAT: $(AZDO_PAT)
+        AZDO_PLAN_ID: ${{ parameters.testPlan }}
+        AZDO_SUITE_ID: ${{ parameters.testSuite }}
+
     - task: UseDotNet@2
       displayName: Use .NET 10 SDK
       inputs:
@@ -273,6 +301,20 @@ jobs:
         VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
         VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
         VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
+    - task: PowerShell@2
+      displayName: Associate freshly built tests with Test Cases
+      inputs:
+        targetType: inline
+        script: |
+          $ErrorActionPreference = 'Stop'
+          python main.py associate-scripts --manifest "QA.Regression.Automation/Tests/Generated/Suite$env:AZDO_SUITE_ID/automation-manifest.json" --overwrite-association
+          if ($LASTEXITCODE -ne 0) { throw 'Associating Test Plan scripts failed.' }
+      env:
+        AZDO_ORG: $(AZDO_ORG)
+        AZDO_PROJECT: $(AZDO_PROJECT)
+        AZDO_PAT: $(AZDO_PAT)
+        AZDO_SUITE_ID: ${{ parameters.testSuite }}
 
     - task: VSTest@3
       displayName: Run associated tests from Azure Test Plan

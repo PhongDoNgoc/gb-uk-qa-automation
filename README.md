@@ -135,6 +135,8 @@ This updates the automation association on existing Test Case work items; it doe
 
 The `QA.Regression.Automation/azure-testplans-run.yml` pipeline uses the same self-hosted Linux agent for `DEV` and `STAGE`. On Linux it selects automated test points by plan, suite, and configuration through the Azure DevOps Test APIs, runs their associated NUnit methods with `dotnet test`, and writes outcomes and evidence attachments back to the Test Plan. It also publishes TRX files to the pipeline run. The hosted Windows route continues to use the Visual Studio Test task's Test Plan selector.
 
+Both Test Plan routes fetch the latest cases, regenerate the selected suite before building, and update automation associations from that run's manifest after a successful build. They do not rely on the subset of generated scripts committed in the repository. `AZDO_PAT` therefore needs Work Items read/write and Test Management read/write permissions. The Linux runner logs the selected case count and each outcome, including no-match errors, and resolves screenshot/trace attachments from the TRX deployment directory for each test execution.
+
 ## Azure variable checklist
 
 Create these Azure Pipeline variables before running:
