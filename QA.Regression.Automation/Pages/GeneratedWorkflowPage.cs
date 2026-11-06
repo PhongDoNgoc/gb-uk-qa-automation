@@ -15,7 +15,7 @@ public class GeneratedWorkflowPage
     private const int UnitDetailsReadinessTimeoutMs = 30000;
     private const int DataSettleStableMs = 1500;
 
-    internal int ExportReadyTimeoutMs { get; init; } = 120000;
+    internal int ExportReadyTimeoutMs { get; init; } = 300000;
     internal int ExportDownloadTimeoutMs { get; init; } = 120000;
     internal int DataSettleTimeoutMs { get; init; } = 60000;
     internal int ApiCallTimeoutMs { get; init; } = 45000;
