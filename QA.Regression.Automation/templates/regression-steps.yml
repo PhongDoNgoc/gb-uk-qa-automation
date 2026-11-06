@@ -35,7 +35,7 @@ steps:
 
       source .venv/bin/activate
       python -m pip install --disable-pip-version-check -r requirements.txt
-      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization
+      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization tests.test_generated_script_commit
       python main.py generate-scripts \
         --plan-id "$AZDO_PLAN_ID" \
         --suite-id "$AZDO_SUITE_ID" \
@@ -135,6 +135,21 @@ steps:
     command: build
     projects: QA.Regression.Automation/QA.Regression.Automation.csproj
     arguments: '--configuration $(buildConfiguration) --no-restore'
+
+- task: Bash@3
+  displayName: Commit generated tests to the source branch
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      source .venv/bin/activate
+      python main.py commit-generated \
+        --suite-id "$AZDO_SUITE_ID" \
+        --project-dir QA.Regression.Automation
+  env:
+    GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
+    BUILD_SOURCEBRANCH: $(Build.SourceBranch)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
 
 - task: Bash@3
   displayName: Install Playwright dependencies and Chromium

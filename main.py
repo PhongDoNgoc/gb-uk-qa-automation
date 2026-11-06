@@ -7,6 +7,7 @@ from automation_association import associate_generated_tests
 from automation_generator import generate_automation_scripts
 from azure_client import AzureDevOpsClient, AzureDevOpsError
 from config import load_config, setup_logging, validate_required
+from generated_script_commit import commit_generated_suite
 from test_plan_runner import run_test_plan
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_plan.add_argument("--build-configuration", default="Release", help="Build configuration to execute")
     run_plan.add_argument("--results-directory", required=True, help="Directory for generated TRX files and attachments")
+
+    commit_generated = sub.add_parser(
+        "commit-generated",
+        help="Commit changed generated scripts and push them to the pipeline source branch",
+    )
+    commit_generated.add_argument("--suite-id", required=True, type=int, help="Azure Test Suite ID")
+    commit_generated.add_argument(
+        "--project-dir",
+        default="QA.Regression.Automation",
+        help="Path to the QA.Regression.Automation project",
+    )
 
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
@@ -151,6 +163,11 @@ def _run() -> int:
                 f"Cases failed: {result['failed_case_count']}"
             )
             return 1 if result["failed_case_count"] else 0
+
+        if args.command == "commit-generated":
+            committed = commit_generated_suite(suite_id=args.suite_id, project_dir=args.project_dir)
+            print("Generated scripts committed." if committed else "Generated scripts already up to date.")
+            return 0
 
         parser.print_help()
         return 1

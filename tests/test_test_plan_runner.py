@@ -145,12 +145,14 @@ class TestPlanRunnerTests(unittest.TestCase):
         linux_commands = [
             "python main.py generate-scripts",
             "dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj",
+            "python main.py commit-generated",
             "python main.py associate-scripts",
             "python main.py run-test-plan",
         ]
         windows_commands = [
             "python main.py generate-scripts",
             "displayName: Build test project",
+            "displayName: Commit generated tests to the source branch",
             "python main.py associate-scripts",
             "- task: VSTest@3",
         ]
@@ -158,8 +160,22 @@ class TestPlanRunnerTests(unittest.TestCase):
             positions = [branch.index(command) for command in commands]
             self.assertEqual(positions, sorted(positions))
             self.assertIn("--overwrite-association", branch)
+            self.assertIn("GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)", branch)
             self.assertIn("AZDO_PLAN_ID: ${{ parameters.testPlan }}", branch)
             self.assertIn("AZDO_SUITE_ID: ${{ parameters.testSuite }}", branch)
+
+    def test_ci_pipeline_commits_generated_scripts_after_successful_build(self):
+        project = Path(__file__).resolve().parents[1] / "QA.Regression.Automation"
+        pipeline = (project / "templates" / "regression-steps.yml").read_text(encoding="utf-8")
+        positions = [
+            pipeline.index("python main.py generate-scripts"),
+            pipeline.index("displayName: Build generated test project"),
+            pipeline.index("displayName: Commit generated tests to the source branch"),
+            pipeline.index("displayName: Run Playwright/NUnit tests"),
+        ]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)", pipeline)
+        self.assertIn("BUILD_SOURCEBRANCH: $(Build.SourceBranch)", pipeline)
 
     def test_runs_only_automated_points_for_selected_configuration_and_updates_test_plan(self):
         client = FakeAzureClient(

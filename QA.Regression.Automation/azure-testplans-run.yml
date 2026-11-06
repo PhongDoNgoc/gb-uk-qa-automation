@@ -121,7 +121,7 @@ jobs:
         VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
     - task: Bash@3
-      displayName: Generate, build, associate and run Azure Test Plan cases
+      displayName: Generate and build Azure Test Plan cases
       inputs:
         targetType: inline
         script: |
@@ -157,7 +157,7 @@ jobs:
 
           source .venv/bin/activate
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m unittest -b tests.test_test_plan_runner
+          python -m unittest -b tests.test_test_plan_runner tests.test_generated_script_commit
           python main.py generate-scripts \
             --plan-id "$AZDO_PLAN_ID" \
             --suite-id "$AZDO_SUITE_ID" \
@@ -165,6 +165,36 @@ jobs:
             --overwrite
           dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj \
             --configuration "$BUILD_CONFIGURATION" --no-restore
+      env:
+        AZDO_ORG: $(AZDO_ORG)
+        AZDO_PROJECT: $(AZDO_PROJECT)
+        AZDO_PAT: $(AZDO_PAT)
+        AZDO_PLAN_ID: ${{ parameters.testPlan }}
+        AZDO_SUITE_ID: ${{ parameters.testSuite }}
+        BUILD_CONFIGURATION: $(buildConfiguration)
+
+    - task: Bash@3
+      displayName: Commit generated tests to the source branch
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          source .venv/bin/activate
+          python main.py commit-generated \
+            --suite-id "$AZDO_SUITE_ID" \
+            --project-dir QA.Regression.Automation
+      env:
+        GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
+        BUILD_SOURCEBRANCH: $(Build.SourceBranch)
+        AZDO_SUITE_ID: ${{ parameters.testSuite }}
+
+    - task: Bash@3
+      displayName: Associate and run Azure Test Plan cases
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          source .venv/bin/activate
           python main.py associate-scripts \
             --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json" \
             --overwrite-association
@@ -259,6 +289,19 @@ jobs:
         command: build
         projects: QA.Regression.Automation/QA.Regression.Automation.csproj
         arguments: --configuration $(buildConfiguration) --no-restore
+
+    - task: PowerShell@2
+      displayName: Commit generated tests to the source branch
+      inputs:
+        targetType: inline
+        script: |
+          $ErrorActionPreference = 'Stop'
+          python main.py commit-generated --suite-id "$env:AZDO_SUITE_ID" --project-dir QA.Regression.Automation
+          if ($LASTEXITCODE -ne 0) { throw 'Committing generated Test Plan scripts failed.' }
+      env:
+        GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
+        BUILD_SOURCEBRANCH: $(Build.SourceBranch)
+        AZDO_SUITE_ID: ${{ parameters.testSuite }}
 
     - task: PowerShell@2
       displayName: Install Playwright browsers
