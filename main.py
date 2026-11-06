@@ -3,11 +3,10 @@ from __future__ import annotations
 import argparse
 import logging
 
-from automation_association import associate_generated_tests
+from automation_association import associate_generated_tests, validate_generated_suite
 from automation_generator import generate_automation_scripts
 from azure_client import AzureDevOpsClient, AzureDevOpsError
 from config import load_config, setup_logging, validate_required
-from generated_script_commit import commit_generated_suite
 from test_plan_runner import run_test_plan
 
 logger = logging.getLogger(__name__)
@@ -48,6 +47,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Replace an existing Azure Test Case automation association",
     )
 
+    validate = sub.add_parser("validate-scripts", help="Validate a committed generated suite without regeneration")
+    validate.add_argument("--manifest", required=True, help="Path to automation-manifest.json")
+    validate.add_argument("--plan-id", required=True, type=int, help="Azure Test Plan ID")
+    validate.add_argument("--suite-id", required=True, type=int, help="Azure Test Suite ID")
+
     run_plan = sub.add_parser("run-test-plan", help="Run associated test points and publish results to Azure Test Plans")
     run_plan.add_argument("--plan-id", required=True, type=int, help="Azure Test Plan ID")
     run_plan.add_argument("--suite-id", required=True, type=int, help="Azure Test Suite ID")
@@ -59,17 +63,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_plan.add_argument("--build-configuration", default="Release", help="Build configuration to execute")
     run_plan.add_argument("--results-directory", required=True, help="Directory for generated TRX files and attachments")
-
-    commit_generated = sub.add_parser(
-        "commit-generated",
-        help="Commit changed generated scripts and push them to the pipeline source branch",
-    )
-    commit_generated.add_argument("--suite-id", required=True, type=int, help="Azure Test Suite ID")
-    commit_generated.add_argument(
-        "--project-dir",
-        default="QA.Regression.Automation",
-        help="Path to the QA.Regression.Automation project",
-    )
 
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser
@@ -92,6 +85,13 @@ def _run() -> int:
     load_config()
 
     try:
+        if args.command == "validate-scripts":
+            count = validate_generated_suite(
+                manifest_path=args.manifest, plan_id=args.plan_id, suite_id=args.suite_id,
+            )
+            print(f"Validated {count} checked-in scripts for plan {args.plan_id}, suite {args.suite_id}.")
+            return 0
+
         if args.command == "generate-scripts":
             requires_azure = not bool(args.suite_file) or bool(args.associate)
             client = _build_azure_client_or_fail() if requires_azure else None
@@ -163,11 +163,6 @@ def _run() -> int:
                 f"Cases failed: {result['failed_case_count']}"
             )
             return 1 if result["failed_case_count"] else 0
-
-        if args.command == "commit-generated":
-            committed = commit_generated_suite(suite_id=args.suite_id, project_dir=args.project_dir)
-            print("Generated scripts committed." if committed else "Generated scripts already up to date.")
-            return 0
 
         parser.print_help()
         return 1

@@ -69,7 +69,7 @@ def generate_automation_scripts(
 
     for test_case in source.test_cases:
         class_name, method_name = _build_test_identifiers(test_case, suite_namespace)
-        file_name = f"{class_name}.cs"
+        file_name = f"Tc{test_case.test_case_id}.cs"
         target_path = tests_dir / file_name
         _delete_stale_test_case_files(tests_dir, test_case.test_case_id, target_path, overwrite=overwrite)
         strategy = _detect_strategy(test_case)
@@ -108,7 +108,10 @@ def generate_automation_scripts(
         "namespace": suite_namespace,
         "generated_count": len(generated),
         "skipped_count": len(skipped),
-        "tests": generated + skipped,
+        "tests": [
+            {key: value for key, value in entry.items() if key not in {"steps", "parameter_values", "parameter_rows"}}
+            for entry in generated + skipped
+        ],
     }
 
     manifest_path = tests_dir / "automation-manifest.json"
@@ -1176,6 +1179,6 @@ def _write_file(path: Path, content: str, *, overwrite: bool) -> str:
 
 def _portable_path(path: Path, base: Path) -> str:
     try:
-        return str(path.resolve().relative_to(base.resolve()))
+        return path.resolve().relative_to(base.resolve()).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()

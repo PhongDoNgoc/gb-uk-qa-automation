@@ -624,6 +624,7 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertEqual(len(generated), 1)
             generated_file = Path(generated[0]["file_path"])
             self.assertTrue(generated_file.exists())
+            self.assertEqual(generated_file.name, "Tc31682.cs")
 
             content = generated_file.read_text(encoding="utf-8")
             self.assertIn('[Property("TestCaseId", "31682")]', content)
@@ -641,6 +642,10 @@ class AutomationGeneratorTests(unittest.TestCase):
             self.assertEqual(manifest["suite_id"], 31681)
             self.assertEqual(manifest["generated_count"], 1)
             self.assertEqual(manifest["tests"][0]["strategy"], "login-success")
+            self.assertNotIn("steps", manifest["tests"][0])
+            self.assertNotIn("parameter_values", manifest["tests"][0])
+            self.assertNotIn("parameter_rows", manifest["tests"][0])
+            self.assertNotIn("ValidPassword123!", Path(result["manifest_path"]).read_text(encoding="utf-8"))
             self.assertEqual(
                 manifest["tests"][0]["fully_qualified_name"],
                 "QA.Regression.Automation.Tests.Generated.Suite31681."

@@ -1,6 +1,6 @@
 steps:
 - task: Bash@3
-  displayName: Fetch latest Test Plans cases and generate automation
+  displayName: Prepare Python and validate checked-in test scripts
   inputs:
     targetType: inline
     script: |
@@ -35,12 +35,11 @@ steps:
 
       source .venv/bin/activate
       python -m pip install --disable-pip-version-check -r requirements.txt
-      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization tests.test_generated_script_commit
-      python main.py generate-scripts \
+      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization
+      python main.py validate-scripts \
         --plan-id "$AZDO_PLAN_ID" \
         --suite-id "$AZDO_SUITE_ID" \
-        --project-dir QA.Regression.Automation \
-        --overwrite
+        --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json"
   env:
     AZDO_ORG: $(AZDO_ORG)
     AZDO_PROJECT: $(AZDO_PROJECT)
@@ -137,20 +136,6 @@ steps:
     arguments: '--configuration $(buildConfiguration) --no-restore'
 
 - task: Bash@3
-  displayName: Commit generated tests to the source branch
-  inputs:
-    targetType: inline
-    script: |
-      set -euo pipefail
-      source .venv/bin/activate
-      python main.py commit-generated \
-        --suite-id "$AZDO_SUITE_ID" \
-        --project-dir QA.Regression.Automation
-  env:
-    BUILD_SOURCEBRANCH: $(Build.SourceBranch)
-    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
-
-- task: Bash@3
   displayName: Install Playwright dependencies and Chromium
   inputs:
     targetType: inline
@@ -183,19 +168,29 @@ steps:
     AZDO_PAT: $(AZDO_PAT)
     AZDO_SUITE_ID: $(AZDO_SUITE_ID)
 
-- task: DotNetCoreCLI@2
-  displayName: Run Playwright/NUnit tests
+- task: Bash@3
+  displayName: Run checked-in tests and publish Azure Test Plan outcomes
   inputs:
-    command: test
-    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
-    arguments: >-
-      --configuration $(buildConfiguration)
-      --no-build
-      --filter "FullyQualifiedName~QA.Regression.Automation.Tests.Generated.Suite$(AZDO_SUITE_ID)"
-      --logger "trx;LogFileName=regression.trx"
-      --results-directory "$(Agent.TempDirectory)/TestResults"
-    publishTestResults: false
+    targetType: inline
+    script: |
+      set -euo pipefail
+      source .venv/bin/activate
+      python main.py run-test-plan \
+        --plan-id "$AZDO_PLAN_ID" \
+        --suite-id "$AZDO_SUITE_ID" \
+        --configuration-id "$AZDO_CONFIGURATION_ID" \
+        --test-project QA.Regression.Automation/QA.Regression.Automation.csproj \
+        --build-configuration "$BUILD_CONFIGURATION" \
+        --results-directory "$RESULTS_DIRECTORY"
   env:
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_PLAN_ID: $(AZDO_PLAN_ID)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+    AZDO_CONFIGURATION_ID: $(AZDO_CONFIGURATION_ID)
+    BUILD_CONFIGURATION: $(buildConfiguration)
+    RESULTS_DIRECTORY: $(Agent.TempDirectory)/TestResults
     TEST_TARGET_ENV: $(TEST_TARGET_ENV)
     VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
     VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
@@ -210,7 +205,7 @@ steps:
   condition: succeededOrFailed()
   inputs:
     testResultsFormat: VSTest
-    testResultsFiles: regression.trx
+    testResultsFiles: '**/*.trx'
     searchFolder: $(Agent.TempDirectory)/TestResults
     failTaskOnFailedTests: true
     failTaskOnMissingResultsFile: true

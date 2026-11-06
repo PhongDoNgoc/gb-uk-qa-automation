@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from automation_association import associate_generated_tests
+from automation_association import associate_generated_tests, validate_generated_suite
 from automation_generator import generate_automation_scripts
 
 
@@ -45,6 +45,60 @@ class FakeClient:
 
 
 class AutomationAssociationTests(unittest.TestCase):
+    def test_validate_committed_suite_checks_paths_ids_and_complete_file_set(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manifest_path = root / "automation-manifest.json"
+            source = root / "Tc31682.cs"
+            source.write_text("// reviewed source", encoding="utf-8")
+            manifest = {
+                "plan_id": 30985,
+                "suite_id": 31681,
+                "tests": [{
+                    "test_case_id": 31682,
+                    "file_path": r"QA.Regression.Automation\Tests\Generated\Suite31681\Tc31682.cs",
+                    "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Class.Method",
+                }],
+            }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            def validate(plan_id=30985):
+                return validate_generated_suite(
+                    manifest_path=str(manifest_path), plan_id=plan_id, suite_id=31681,
+                )
+            self.assertEqual(validate(), 1)
+            self.assertEqual(source.read_text(encoding="utf-8"), "// reviewed source")
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                validate(plan_id=40001)
+            extra = root / "Tc999.cs"
+            extra.write_text("// stale", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "files do not match"):
+                validate()
+            extra.unlink()
+            source.unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "Committed script"):
+                validate()
+            manifest_path.unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "commit/push"):
+                validate()
+
+    def test_validate_committed_suite_rejects_duplicate_cases_and_wrong_namespace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Tc1.cs").write_text("// generated", encoding="utf-8")
+            path = root / "automation-manifest.json"
+            entry = {
+                "test_case_id": 1, "file_path": "Tc1.cs",
+                "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Class.Method",
+            }
+            manifest = {"plan_id": 30985, "suite_id": 31681, "tests": [entry, entry]}
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Duplicate Test Case"):
+                validate_generated_suite(manifest_path=str(path), plan_id=30985, suite_id=31681)
+            manifest["tests"] = [{**entry, "fully_qualified_name": "Other.Class.Method"}]
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "outside the selected"):
+                validate_generated_suite(manifest_path=str(path), plan_id=30985, suite_id=31681)
+
     def test_associate_generated_tests_updates_manifest_entries(self):
         with tempfile.TemporaryDirectory() as td:
             manifest_path = Path(td) / "automation-manifest.json"

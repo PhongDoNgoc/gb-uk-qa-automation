@@ -53,8 +53,6 @@ jobs:
       - ${{ else }}:
         - Agent.Name -equals gbvmdsmanagerdne01
     steps:
-    - checkout: self
-      persistCredentials: true
     - task: UseDotNet@2
       displayName: Use .NET 10 SDK
       inputs:
@@ -123,7 +121,7 @@ jobs:
         VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
 
     - task: Bash@3
-      displayName: Generate and build Azure Test Plan cases
+      displayName: Validate, build, associate and run checked-in Test Plan scripts
       inputs:
         targetType: inline
         script: |
@@ -159,43 +157,13 @@ jobs:
 
           source .venv/bin/activate
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m unittest -b tests.test_test_plan_runner tests.test_generated_script_commit
-          python main.py generate-scripts \
+          python -m unittest -b tests.test_test_plan_runner
+          python main.py validate-scripts \
             --plan-id "$AZDO_PLAN_ID" \
             --suite-id "$AZDO_SUITE_ID" \
-            --project-dir QA.Regression.Automation \
-            --overwrite
+            --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json"
           dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj \
             --configuration "$BUILD_CONFIGURATION" --no-restore
-      env:
-        AZDO_ORG: $(AZDO_ORG)
-        AZDO_PROJECT: $(AZDO_PROJECT)
-        AZDO_PAT: $(AZDO_PAT)
-        AZDO_PLAN_ID: ${{ parameters.testPlan }}
-        AZDO_SUITE_ID: ${{ parameters.testSuite }}
-        BUILD_CONFIGURATION: $(buildConfiguration)
-
-    - task: Bash@3
-      displayName: Commit generated tests to the source branch
-      inputs:
-        targetType: inline
-        script: |
-          set -euo pipefail
-          source .venv/bin/activate
-          python main.py commit-generated \
-            --suite-id "$AZDO_SUITE_ID" \
-            --project-dir QA.Regression.Automation
-      env:
-        BUILD_SOURCEBRANCH: $(Build.SourceBranch)
-        AZDO_SUITE_ID: ${{ parameters.testSuite }}
-
-    - task: Bash@3
-      displayName: Associate and run Azure Test Plan cases
-      inputs:
-        targetType: inline
-        script: |
-          set -euo pipefail
-          source .venv/bin/activate
           python main.py associate-scripts \
             --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json" \
             --overwrite-association
@@ -247,15 +215,13 @@ jobs:
     pool:
       vmImage: windows-latest
     steps:
-    - checkout: self
-      persistCredentials: true
     - task: UsePythonVersion@0
       displayName: Use Python 3
       inputs:
         versionSpec: '3.x'
 
     - task: PowerShell@2
-      displayName: Fetch latest Test Plans cases and generate automation
+      displayName: Prepare Python and validate checked-in test scripts
       inputs:
         targetType: inline
         script: |
@@ -265,8 +231,8 @@ jobs:
           }
           python -m pip install --disable-pip-version-check -r requirements.txt
           if ($LASTEXITCODE -ne 0) { throw 'Installing Python dependencies failed.' }
-          python main.py generate-scripts --plan-id "$env:AZDO_PLAN_ID" --suite-id "$env:AZDO_SUITE_ID" --project-dir QA.Regression.Automation --overwrite
-          if ($LASTEXITCODE -ne 0) { throw 'Generating Test Plan scripts failed.' }
+          python main.py validate-scripts --plan-id "$env:AZDO_PLAN_ID" --suite-id "$env:AZDO_SUITE_ID" --manifest "QA.Regression.Automation/Tests/Generated/Suite$env:AZDO_SUITE_ID/automation-manifest.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Validating checked-in Test Plan scripts failed.' }
       env:
         AZDO_ORG: $(AZDO_ORG)
         AZDO_PROJECT: $(AZDO_PROJECT)
@@ -292,18 +258,6 @@ jobs:
         command: build
         projects: QA.Regression.Automation/QA.Regression.Automation.csproj
         arguments: --configuration $(buildConfiguration) --no-restore
-
-    - task: PowerShell@2
-      displayName: Commit generated tests to the source branch
-      inputs:
-        targetType: inline
-        script: |
-          $ErrorActionPreference = 'Stop'
-          python main.py commit-generated --suite-id "$env:AZDO_SUITE_ID" --project-dir QA.Regression.Automation
-          if ($LASTEXITCODE -ne 0) { throw 'Committing generated Test Plan scripts failed.' }
-      env:
-        BUILD_SOURCEBRANCH: $(Build.SourceBranch)
-        AZDO_SUITE_ID: ${{ parameters.testSuite }}
 
     - task: PowerShell@2
       displayName: Install Playwright browsers

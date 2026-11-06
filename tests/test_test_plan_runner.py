@@ -138,21 +138,19 @@ class TestPlanRunnerTests(unittest.TestCase):
                 )
             self.assertEqual(client.add_test_result_attachment.call_count, 1)
 
-    def test_test_plan_pipeline_generates_builds_and_associates_before_execution(self):
+    def test_test_plan_pipeline_validates_checked_in_scripts_before_execution(self):
         pipeline = (Path(__file__).resolve().parents[1] / "QA.Regression.Automation"
                     / "azure-testplans-run.yml").read_text(encoding="utf-8")
         linux, windows = pipeline.split("  - job: RunTestPlanOnHosted", 1)
         linux_commands = [
-            "python main.py generate-scripts",
+            "python main.py validate-scripts",
             "dotnet build QA.Regression.Automation/QA.Regression.Automation.csproj",
-            "python main.py commit-generated",
             "python main.py associate-scripts",
             "python main.py run-test-plan",
         ]
         windows_commands = [
-            "python main.py generate-scripts",
+            "python main.py validate-scripts",
             "displayName: Build test project",
-            "displayName: Commit generated tests to the source branch",
             "python main.py associate-scripts",
             "- task: VSTest@3",
         ]
@@ -160,25 +158,29 @@ class TestPlanRunnerTests(unittest.TestCase):
             positions = [branch.index(command) for command in commands]
             self.assertEqual(positions, sorted(positions))
             self.assertIn("--overwrite-association", branch)
-            self.assertIn("checkout: self\n      persistCredentials: true", branch)
-            self.assertNotIn("GITHUB_PUSH_TOKEN", branch)
+            self.assertNotIn("artifact: generated-test-scripts", branch)
+            self.assertNotIn("commit-generated", branch)
+            self.assertNotIn("generate-scripts", branch)
             self.assertIn("AZDO_PLAN_ID: ${{ parameters.testPlan }}", branch)
             self.assertIn("AZDO_SUITE_ID: ${{ parameters.testSuite }}", branch)
 
-    def test_ci_pipeline_commits_generated_scripts_after_successful_build(self):
+    def test_ci_pipeline_runs_checked_in_scripts_and_publishes_test_plan_results(self):
         project = Path(__file__).resolve().parents[1] / "QA.Regression.Automation"
         pipeline = (project / "templates" / "regression-steps.yml").read_text(encoding="utf-8")
         positions = [
-            pipeline.index("python main.py generate-scripts"),
+            pipeline.index("python main.py validate-scripts"),
             pipeline.index("displayName: Build generated test project"),
-            pipeline.index("displayName: Commit generated tests to the source branch"),
-            pipeline.index("displayName: Run Playwright/NUnit tests"),
+            pipeline.index("python main.py associate-scripts"),
+            pipeline.index("python main.py run-test-plan"),
         ]
         self.assertEqual(positions, sorted(positions))
-        self.assertNotIn("GITHUB_PUSH_TOKEN", pipeline)
-        self.assertIn("BUILD_SOURCEBRANCH: $(Build.SourceBranch)", pipeline)
+        self.assertNotIn("artifact: generated-test-scripts", pipeline)
+        self.assertNotIn("commit-generated", pipeline)
+        self.assertNotIn("generate-scripts", pipeline)
+        self.assertIn("--configuration-id", pipeline)
+        self.assertIn("testResultsFiles: '**/*.trx'", pipeline)
         checkout_pipeline = (project / "azure-pipelines.yml").read_text(encoding="utf-8")
-        self.assertEqual(checkout_pipeline.count("persistCredentials: true"), 2)
+        self.assertNotIn("persistCredentials: true", checkout_pipeline)
 
     def test_runs_only_automated_points_for_selected_configuration_and_updates_test_plan(self):
         client = FakeAzureClient(

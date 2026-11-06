@@ -1,9 +1,11 @@
 ---
 name: sync-testplan-automation
-description: Use this skill when Azure Test Plans test cases are added or changed and the repository must regenerate Playwright tests, re-associate them to Azure Test Cases, validate locally, push code, and rerun Azure Pipelines/Test Plans.
+description: 'Use when the user explicitly requests the Azure Test Plans end-to-end association and execution workflow, including regenerating Playwright tests and re-associating Azure Test Cases. For local-only synchronization after suite or test-data changes, use update-azure-test-suite instead.'
 ---
 
 # Sync Test Plan Automation
+
+For requests to update local source code only, use [update-azure-test-suite](../update-azure-test-suite/SKILL.md) instead. This workflow changes Azure associations and may execute tests. Its commit/push commands require explicit user approval; they are not part of local-only synchronization.
 
 Use this skill when manual test cases in Azure Test Plans change and the codebase must be brought back in sync.
 

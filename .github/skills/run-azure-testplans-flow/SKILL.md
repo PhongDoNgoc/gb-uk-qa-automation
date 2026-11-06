@@ -7,7 +7,7 @@ description: Use this skill when the generated automation is already in the repo
 
 Use this skill when the automation scripts already exist and you need to execute or verify the Azure DevOps side of the flow.
 
-This skill is for the "run it in Azure" phase. If test cases were added or manual steps changed, use `sync-testplan-automation` first.
+This skill is for the "run it in Azure" phase. If test cases, manual steps, or test data changed, use `update-azure-test-suite` locally first, then let the user review and commit/push the scripts and manifest. Pipelines never regenerate source code.
 
 ## When to use
 
@@ -23,11 +23,12 @@ Use this skill when any of the following is true:
 - CI pipeline YAML: `QA.Regression.Automation/azure-pipelines.yml`
 - Test Plans pipeline YAML: `QA.Regression.Automation/azure-testplans-run.yml`
 - Target environment parameter: `targetEnvironment`
-- Agent routing parameters: `agentPoolMode`, `selfHostedPoolName`
-- For `DEV` and `STAGE`, `Auto` uses the CI self-hosted Linux agent: pool `SelfHostedAP-Dev-NE-Swarm`, agent `gbvmdsmanagerdne01`.
+- Both pipelines accept `testPlan`, `testSuite`, and `testConfiguration`.
+- Test Plans agent routing parameters: `agentPoolMode`, `selfHostedPoolName`. CI routes by `targetEnvironment`.
+- `DEV` uses pool `SelfHostedAP-Dev-NE-Swarm`, agent `gbvmdsmanagerdne01`; `STAGE` uses pool `SelfHostedAP-Stg-NE-Swarm`, agent `gbvmdsmanagersne01`.
 - The Test Plans pipeline must be authorized to use that pool in Azure DevOps.
 - The Linux job selects test points by plan, suite, and configuration through Azure DevOps APIs, runs their associated NUnit methods with `dotnet test`, and publishes outcomes and attachments back to the Test Plan.
-- The secret pipeline variable `AZDO_PAT` must have Work Items read and Test Management read/write access for Linux Test Plans runs.
+- The secret pipeline variable `AZDO_PAT` must have Work Items read/write and Test Management read/write access.
 - The hosted Windows job continues to use the Visual Studio Test task's Test Plan selector.
 - Base URL variables follow: `VIEWPOINT_BASE_URL_<ENVIRONMENT>`
 - The checked-in pipeline YAML files do not hardcode a PROD base URL, so Azure DevOps variables must provide `VIEWPOINT_BASE_URL_PROD` and any other environment URLs you use.
@@ -36,8 +37,8 @@ Use this skill when any of the following is true:
 
 Before using this skill, make sure all of the following are true:
 
-- The latest generated code has been committed and pushed
-- The target Azure Test Case is already marked as automated
+- The latest reviewed generated C# scripts and `automation-manifest.json` have been committed and pushed to the branch selected for the run.
+- The selected plan/suite matches the committed manifest. Pipelines validate the manifest and build the repository source, then associate its tests with Azure Test Cases.
 - Azure pipeline variables exist:
   - `VIEWPOINT_USERNAME`
   - `VIEWPOINT_PASSWORD`
@@ -45,7 +46,7 @@ Before using this skill, make sure all of the following are true:
   - `VIEWPOINT_INVALID_PASSWORD` for negative-login scenarios
   - `VIEWPOINT_BASE_URL_PROD` for production
   - any additional environment URLs you want to run, such as `VIEWPOINT_BASE_URL_DEV` or `VIEWPOINT_BASE_URL_STAGE`
-- The secret pipeline variable `AZDO_PAT` with Work Items read and Test Management read/write access for Linux Test Plans runs
+- The secret pipeline variable `AZDO_PAT` with Work Items read/write and Test Management read/write access
 - You know the specific Azure Test Plan ID, suite ID, and configuration ID you want to execute
 - If the target environment is private, a reachable self-hosted agent pool exists and is permitted for the pipeline
 
@@ -59,16 +60,14 @@ Create or run the pipeline that uses:
 
 Choose:
 
-- `targetEnvironment = PROD`, `DEV`, `STAGE`, or another configured environment name
-- `agentPoolMode = Auto` to use hosted for `PROD` and self-hosted for non-`PROD`
-- `agentPoolMode = SelfHosted` if you want even `PROD` to run through your internal pool
-- `selfHostedPoolName = your pool name` when self-hosted routing is used
+- `targetEnvironment = PROD`, `DEV`, or `STAGE`
+- `testPlan`, `testSuite`, and `testConfiguration` matching the suite you generated and the test points to execute
 
 Expected result:
 
 - the build succeeds
 - Playwright/NUnit tests are discovered
-- the automated login test passes
+- the selected associated tests execute and publish outcomes/evidence to Azure Test Plans
 
 If CI says no test sources were found, verify that the run is using the current YAML from the latest branch state.
 
@@ -143,7 +142,7 @@ Correct options:
 
 ## Quick operator checklist
 
-1. Push latest code
+1. Review and push latest scripts and their manifest (only if the user explicitly requests a push)
 2. Confirm pipeline variables exist
 3. Run CI pipeline from `azure-pipelines.yml`
 4. Run Test Plans pipeline from `azure-testplans-run.yml`

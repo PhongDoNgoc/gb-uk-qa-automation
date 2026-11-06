@@ -5,6 +5,40 @@ from pathlib import Path
 from typing import Any
 
 
+def validate_generated_suite(*, manifest_path: str, plan_id: int, suite_id: int) -> int:
+    path = Path(manifest_path)
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Committed automation manifest not found: {path}. "
+            "Generate locally, review, and commit/push the scripts and manifest before running the pipeline."
+        )
+    manifest = _load_manifest(manifest_path)
+    if manifest.get("plan_id") != plan_id or manifest.get("suite_id") != suite_id:
+        raise ValueError(f"Manifest does not match requested plan {plan_id}, suite {suite_id}.")
+    files: set[Path] = set()
+    case_ids: set[int] = set()
+    for entry in manifest["tests"]:
+        case_id = int(entry["test_case_id"])
+        if case_id in case_ids:
+            raise ValueError(f"Duplicate Test Case {case_id} in automation manifest.")
+        case_ids.add(case_id)
+        file_name = Path(str(entry.get("file_path") or "").replace("\\", "/")).name
+        if not file_name or not file_name.endswith(".cs"):
+            raise ValueError(f"Manifest entry for Test Case {case_id} has no C# file_path.")
+        source = path.parent / file_name
+        if not source.is_file():
+            raise FileNotFoundError(f"Committed script for Test Case {case_id} not found: {source}")
+        name = str(entry.get("fully_qualified_name") or "")
+        if not name.startswith(f"QA.Regression.Automation.Tests.Generated.Suite{suite_id}."):
+            raise ValueError(f"Test Case {case_id} has a test name outside the selected generated suite.")
+        if source in files:
+            raise ValueError(f"Multiple manifest entries reference {source}.")
+        files.add(source)
+    if files != set(path.parent.glob("Tc*.cs")):
+        raise ValueError("Generated suite files do not match the manifest. Regenerate locally and commit both.")
+    return len(case_ids)
+
+
 def associate_generated_tests(
     *,
     client: Any,

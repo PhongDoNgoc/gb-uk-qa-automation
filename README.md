@@ -12,6 +12,12 @@ This repository is focused on this flow:
 
 ## Main commands
 
+### Sync suite changes through Copilot
+
+Ask Copilot: "Use update-azure-test-suite to sync my Azure suite changes into my local project."
+
+The [update-azure-test-suite skill](.github/skills/update-azure-test-suite/SKILL.md) defaults to plan `30985`, suite `31681`. It fetches current test cases and parameter data, updates local generated files, and validates the build without committing, pushing, changing Azure associations, or running browser tests. Supply different plan/suite IDs when needed. This skill runs on demand; it does not monitor Azure DevOps in the background.
+
 ### Generate scripts from an exported suite file
 
 ```bash
@@ -21,8 +27,10 @@ python main.py generate-scripts --suite-file .\samples\suite_31681_testcases.txt
 ### Generate scripts directly from Azure Test Plans
 
 ```bash
-python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --overwrite
+python main.py generate-scripts --plan-id 30985 --suite-id 31681 --project-dir QA.Regression.Automation --overwrite
 ```
+
+Run this command from the `azure-testcase-generator` directory after setting `AZDO_ORG`, `AZDO_PROJECT`, and `AZDO_PAT` in `.env`. It writes the generated C# files and manifest directly into `QA.Regression.Automation/Tests/Generated/Suite31681` on your local machine. Generated C# filenames use the short `Tc<test-case-id>.cs` format to avoid Windows path-length errors; the C# test class names remain descriptive.
 
 ### Generate and associate in one step
 
@@ -36,35 +44,31 @@ python main.py generate-scripts --plan-id <PLAN_ID> --suite-id <SUITE_ID> --over
 python main.py associate-scripts --manifest .\QA.Regression.Automation\Tests\Generated\Suite31681\automation-manifest.json
 ```
 
-## Easiest repeatable flow
+## Recommended generate-review-push-run flow
 
-Run this from the repository root:
-
-```powershell
-.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID>
-```
-
-To also commit and push automatically:
+1. Generate scripts locally from the selected Azure plan and suite:
 
 ```powershell
-.\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+python main.py generate-scripts --plan-id 30985 --suite-id 31681 --project-dir QA.Regression.Automation --overwrite
+dotnet build .\QA.Regression.Automation\QA.Regression.Automation.csproj --configuration Release
 ```
 
-If PowerShell blocks local scripts, use:
+2. Review the C# files and `automation-manifest.json` in `QA.Regression.Automation/Tests/Generated/Suite31681`. Commit both scripts and manifest, including removed/renamed files. The manifest is no longer ignored because pipelines need its test-to-case mapping. Manifests omit raw manual steps and parameter data to avoid copying credentials into source control. Review generated source for sensitive values before committing; keep credentials in `.env` or secret pipeline variables.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\sync-testplan-automation.ps1 -PlanId <PLAN_ID> -SuiteId <SUITE_ID> -Commit -Push
+git add -- QA.Regression.Automation/Tests/Generated/Suite31681
+git diff --cached
+git commit -m "Update reviewed automation scripts"
+git push origin HEAD
 ```
 
-For your current default suite, you can copy-paste this exact block:
+3. In Azure DevOps, run either pipeline from the branch containing the reviewed scripts and manifest. Select the matching plan, suite, configuration, and target environment. Both pipelines validate and build the checked-in scripts, associate their manifest entries with Azure Test Cases, and execute them. Neither pipeline regenerates source code.
 
-```powershell
-cd "C:\Users\lan.le\OneDrive - Endeco-Technologies\Desktop\AI Automated Automation Script\azure-testcase-generator"
-powershell -ExecutionPolicy Bypass -File .\sync-testplan-automation.ps1 -PlanId 30985 -SuiteId 31681 -Commit -Push
-```
+4. Review outcomes and evidence in Azure Test Plans and the pipeline's test results. Failed tests also publish results/evidence and cause the run to fail. Newly added or updated manual cases/data require another local generation/review/commit cycle; the pipeline does not translate Azure changes into scripts automatically.
 
-## What the helper script does
+## Optional legacy helper
 
+`sync-testplan-automation.ps1` is a separate end-to-end helper, not the recommended review-before-push workflow. It:
 - loads values from `.env` if present
 - regenerates the suite automation
 - overwrites stale automated associations when the generated test name changes
@@ -129,13 +133,13 @@ You can copy [.env.example](</C:/Users/lan.le/OneDrive - Endeco-Technologies/Des
 
 The manually triggered `QA.Regression.Automation/azure-pipelines.yml` routes `PROD` to the Microsoft-hosted `ubuntu-latest` agent, and routes `DEV` and `STAGE` to Linux self-hosted agent `gbvmdsmanagerdne01` in pool `SelfHostedAP-Dev-NE-Swarm`.
 
-Before building, CI fetches the current test cases and parameter rows from Plan `30985`, Suite `31681`, and regenerates the C# scripts, removing generated files for cases no longer in the suite. After the generated tests build successfully, the pipeline commits/pushes changed generated files to the branch that triggered the run. Both Test Plans pipeline routes use the same sequence. If generation produced no repository changes, the commit step reports that scripts are already up to date and skips creating an empty commit. The pipelines use `checkout: self` with `persistCredentials: true` to reuse the configured GitHub service connection; no separate GitHub token variable is needed. The service connection must be authorized for the pipeline and have permission to push to the source branch. CI then updates automation associations, runs only generated tests from the selected suite, and publishes TRX results. Helper/unit tests in the same project are not included in the CI run.
+Both pipelines check out the selected repository branch, validate its suite manifest and source files, and build those files without regeneration. CI accepts plan/suite/configuration parameters (defaults `30985`/`31681`/`188`), associates the committed tests, and runs the Azure Test Plan API runner so outcomes and evidence update the selected Test Plan test points. Helper/unit tests in the same project are not included in the regression run.
 
-This updates the automation association on existing Test Case work items; it does not create new Test Case items or store C# source code inside the Azure Test Plans suite. Generated C# files are committed to the repository branch after a successful build. This CI pipeline does not use the Azure Test Plans on-demand VSTest flow.
+Association updates existing Test Case work items; it does not create new cases or store C# source code inside Azure Test Plans. The source of truth for execution is the reviewed, committed scripts and manifest, not unpushed local files or current manual step wording.
 
 The `QA.Regression.Automation/azure-testplans-run.yml` pipeline uses the same self-hosted Linux agent for `DEV` and `STAGE`. On Linux it selects automated test points by plan, suite, and configuration through the Azure DevOps Test APIs, runs their associated NUnit methods with `dotnet test`, and writes outcomes and evidence attachments back to the Test Plan. It also publishes TRX files to the pipeline run. The hosted Windows route continues to use the Visual Studio Test task's Test Plan selector.
 
-Both Test Plan routes fetch the latest cases, regenerate the selected suite before building, and update automation associations from that run's manifest after a successful build. They do not rely on the subset of generated scripts committed in the repository. `AZDO_PAT` therefore needs Work Items read/write and Test Management read/write permissions. The Linux runner logs the selected case count and each outcome, including no-match errors, and resolves screenshot/trace attachments from the TRX deployment directory for each test execution.
+Both Test Plan routes update automation associations from the committed manifest after validation and a successful build. `AZDO_PAT` needs Work Items read/write and Test Management read/write permissions. The Linux runner logs the selected case count and each outcome, including no-match errors, and resolves screenshot/trace attachments from the TRX deployment directory for each test execution. Missing manifests/files fail with instructions to generate locally and commit/push. Only test points in the requested plan/suite/configuration run; non-automated points are logged as skipped.
 
 ## Azure variable checklist
 
@@ -150,7 +154,7 @@ Create these Azure Pipeline variables before running:
 - `VIEWPOINT_BASE_URL_STAGE`
 - `AZDO_PAT` (secret)
 
-Configure these in Azure DevOps pipeline variables or a variable group. Mark credentials and `AZDO_PAT` as secret. The PAT must have Work Items read/write and Test Management read/write access so CI can fetch cases and update automation associations, and the Linux Test Plans pipeline can select test points and publish results and attachments. Set each base URL to its actual environment URL. The pipeline validates the selected environment's URL and credentials before running tests.
+Configure these in Azure DevOps pipeline variables or a variable group. Mark credentials and `AZDO_PAT` as secret. The PAT must have Work Items read/write and Test Management read/write access to update automation associations, select test points, and publish results and attachments. Set each base URL to its actual environment URL. The pipeline validates the selected environment's URL and credentials before running tests.
 
 The Linux agents need Python 3 with `venv`, .NET 10, passwordless `sudo` for the pipeline to install Chromium's system dependencies, and outbound access to Azure DevOps, PyPI, and the Playwright browser download service. DEV/STAGE also need VPN access to their target environments. The pipeline installs Chromium through Playwright's .NET API, so PowerShell 7 is not required. If the agent account cannot use passwordless `sudo`, an administrator must preinstall Python/venv and the Linux browser dependencies.
 
@@ -166,7 +170,7 @@ For API tests with IDs that differ by environment, use parameter placeholders in
 
 Replace the example values with actual IDs. Add other ID columns, such as `SiteID`, `MarketUnitID`, or `ControlUnitID`, as needed. Keep the ID cells to the actual ID values; do not append labels such as `- dev` to an ID. Include rows for every environment you want to run. The automation generator includes the rows in the generated test and selects the row matching the pipeline's `targetEnvironment` at runtime.
 
-When using CI, it fetches the latest parameter rows and regenerates the scripts at the start of every run. To generate locally instead, fetch the suite directly from Azure DevOps (not a plain-text suite export, which does not carry the parameter rows) and run `python main.py generate-scripts --plan-id 30985 --suite-id 31681 --project-dir QA.Regression.Automation --overwrite`.
+Parameter rows are embedded in generated source at local generation time. Fetch the suite directly from Azure DevOps (not a plain-text suite export, which does not carry the parameter rows), generate locally, review, and commit/push both scripts and manifest. Pipelines use those committed values and never fetch replacement test data to rewrite your scripts.
 
 Optional later:
 
