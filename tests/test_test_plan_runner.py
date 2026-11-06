@@ -160,7 +160,8 @@ class TestPlanRunnerTests(unittest.TestCase):
             positions = [branch.index(command) for command in commands]
             self.assertEqual(positions, sorted(positions))
             self.assertIn("--overwrite-association", branch)
-            self.assertIn("GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)", branch)
+            self.assertIn("checkout: self\n      persistCredentials: true", branch)
+            self.assertNotIn("GITHUB_PUSH_TOKEN", branch)
             self.assertIn("AZDO_PLAN_ID: ${{ parameters.testPlan }}", branch)
             self.assertIn("AZDO_SUITE_ID: ${{ parameters.testSuite }}", branch)
 
@@ -174,8 +175,10 @@ class TestPlanRunnerTests(unittest.TestCase):
             pipeline.index("displayName: Run Playwright/NUnit tests"),
         ]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)", pipeline)
+        self.assertNotIn("GITHUB_PUSH_TOKEN", pipeline)
         self.assertIn("BUILD_SOURCEBRANCH: $(Build.SourceBranch)", pipeline)
+        checkout_pipeline = (project / "azure-pipelines.yml").read_text(encoding="utf-8")
+        self.assertEqual(checkout_pipeline.count("persistCredentials: true"), 2)
 
     def test_runs_only_automated_points_for_selected_configuration_and_updates_test_plan(self):
         client = FakeAzureClient(

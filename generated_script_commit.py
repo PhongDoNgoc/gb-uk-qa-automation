@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import subprocess
 from pathlib import Path
@@ -15,9 +14,6 @@ def commit_generated_suite(
     environ: Mapping[str, str] | None = None,
 ) -> bool:
     environment = dict(os.environ if environ is None else environ)
-    token = environment.get("GITHUB_PUSH_TOKEN", "").strip()
-    if not token or token.startswith("$("):
-        raise ValueError("Pipeline secret GITHUB_PUSH_TOKEN is required to commit generated test scripts.")
 
     source_branch = environment.get("BUILD_SOURCEBRANCH", "").strip()
     if not source_branch.startswith("refs/heads/") or len(source_branch) <= len("refs/heads/"):
@@ -44,13 +40,12 @@ def commit_generated_suite(
     if (remote_host or "").casefold() != "github.com":
         raise ValueError(f"Refusing to push generated scripts to a non-GitHub origin: {remote}")
 
-    git_environment = _git_environment(environment, token)
     pathspec = relative_suite_path.as_posix()
-    _run_git(["add", "--all", "--", pathspec], cwd=repository_root, env=git_environment)
+    _run_git(["add", "--all", "--", pathspec], cwd=repository_root, env=environment)
     changed = subprocess.run(
         ["git", "diff", "--cached", "--quiet", "--", pathspec],
         cwd=repository_root,
-        env=git_environment,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
@@ -60,6 +55,21 @@ def commit_generated_suite(
         return False
     if changed.returncode != 1:
         raise ValueError(f"Could not inspect staged generated-script changes: {changed.stderr.strip()}")
+
+    auth_check = subprocess.run(
+        ["git", "config", "--get-urlmatch", "http.extraheader", remote],
+        cwd=repository_root,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if auth_check.returncode != 0 or not auth_check.stdout.strip():
+        raise ValueError(
+            "GitHub checkout credentials are not persisted for this job. "
+            "Add 'checkout: self' with 'persistCredentials: true' and ensure the GitHub service connection "
+            "has permission to push to the source branch."
+        )
 
     _run_git(["config", "user.name", "Azure Pipelines Automation"], cwd=repository_root)
     _run_git(
@@ -76,26 +86,12 @@ def commit_generated_suite(
             pathspec,
         ],
         cwd=repository_root,
-        env=git_environment,
+        env=environment,
     )
     branch = source_branch.removeprefix("refs/heads/")
-    _run_git(["push", "origin", f"HEAD:refs/heads/{branch}"], cwd=repository_root, env=git_environment)
+    _run_git(["push", "origin", f"HEAD:refs/heads/{branch}"], cwd=repository_root, env=environment)
     print(f"Committed and pushed generated scripts for suite {suite_id} to branch {branch}.", flush=True)
     return True
-
-
-def _git_environment(environment: dict[str, str], token: str) -> dict[str, str]:
-    try:
-        config_count = int(environment.get("GIT_CONFIG_COUNT", "0"))
-    except ValueError as exc:
-        raise ValueError("GIT_CONFIG_COUNT must be an integer when configuring Git push authentication.") from exc
-
-    encoded_credentials = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
-    environment["GIT_CONFIG_COUNT"] = str(config_count + 1)
-    environment[f"GIT_CONFIG_KEY_{config_count}"] = "http.https://github.com/.extraheader"
-    environment[f"GIT_CONFIG_VALUE_{config_count}"] = f"AUTHORIZATION: basic {encoded_credentials}"
-    return environment
-
 
 def _run_git(
     arguments: list[str],

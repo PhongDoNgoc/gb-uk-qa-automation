@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +18,11 @@ class GeneratedScriptCommitTests(unittest.TestCase):
         self.suite.mkdir(parents=True)
         self._git("init", "-q")
         self._git("remote", "add", "origin", "https://github.com/example/repo.git")
+        self._git(
+            "config",
+            "http.https://github.com/.extraheader",
+            "AUTHORIZATION: basic persisted-checkout-credential",
+        )
         self._git("config", "user.name", "Test User")
         self._git("config", "user.email", "test@example.com")
         (self.suite / "Tc1.cs").write_text("class Tc1 {}", encoding="utf-8")
@@ -36,7 +40,6 @@ class GeneratedScriptCommitTests(unittest.TestCase):
 
     def _environment(self, **overrides: str) -> dict[str, str]:
         return {
-            "GITHUB_PUSH_TOKEN": "test-token-not-for-logs",
             "BUILD_SOURCEBRANCH": "refs/heads/main",
             **overrides,
         }
@@ -72,14 +75,8 @@ class GeneratedScriptCommitTests(unittest.TestCase):
         self.assertIn("uncommitted unrelated change", unrelated.read_text(encoding="utf-8"))
         push_command, push_kwargs = next((command, kwargs) for command, kwargs in calls if command[:2] == ["git", "push"])
         self.assertEqual(push_command[-2:], ["origin", "HEAD:refs/heads/main"])
-        self.assertNotIn("test-token-not-for-logs", " ".join(push_command))
-        auth_config = push_kwargs["env"]["GIT_CONFIG_VALUE_0"]
-        encoded = auth_config.removeprefix("AUTHORIZATION: basic ")
-        self.assertEqual(
-            base64.b64decode(encoded).decode("utf-8"),
-            "x-access-token:test-token-not-for-logs",
-        )
-        self.assertNotIn("test-token-not-for-logs", push_kwargs.get("stdout", ""))
+        self.assertNotIn("GITHUB_PUSH_TOKEN", push_kwargs.get("env", {}))
+        self.assertEqual(push_kwargs["env"]["BUILD_SOURCEBRANCH"], "refs/heads/main")
 
     def test_skips_empty_commit_when_generated_scripts_are_unchanged(self):
         with patch("generated_script_commit.subprocess.run", wraps=subprocess.run) as run:
@@ -89,13 +86,19 @@ class GeneratedScriptCommitTests(unittest.TestCase):
         self.assertFalse(committed)
         self.assertFalse(any(call.args[0][:2] == ["git", "push"] for call in run.call_args_list))
 
-    def test_requires_repository_write_secret_and_branch(self):
-        for environment, message in (
-            ({"BUILD_SOURCEBRANCH": "refs/heads/main"}, "GITHUB_PUSH_TOKEN"),
-            ({"GITHUB_PUSH_TOKEN": "token"}, "source ref"),
-        ):
-            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
-                commit_generated_suite(suite_id=31681, project_dir=str(self.project), environ=environment)
+    def test_requires_source_branch(self):
+        with self.assertRaisesRegex(ValueError, "source ref"):
+            commit_generated_suite(suite_id=31681, project_dir=str(self.project), environ={})
+
+    def test_requires_persisted_checkout_credentials_when_changes_exist(self):
+        (self.suite / "Tc1.cs").write_text("class Tc1 { int Updated => 1; }", encoding="utf-8")
+        self._git("config", "--unset-all", "http.https://github.com/.extraheader")
+        with self.assertRaisesRegex(ValueError, "checkout credentials are not persisted"):
+            commit_generated_suite(
+                suite_id=31681,
+                project_dir=str(self.project),
+                environ=self._environment(),
+            )
 
     def test_does_not_push_to_non_github_remote(self):
         self._git("remote", "set-url", "origin", "https://example.invalid/repo.git")

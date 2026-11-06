@@ -53,6 +53,8 @@ jobs:
       - ${{ else }}:
         - Agent.Name -equals gbvmdsmanagerdne01
     steps:
+    - checkout: self
+      persistCredentials: true
     - task: UseDotNet@2
       displayName: Use .NET 10 SDK
       inputs:
@@ -184,7 +186,6 @@ jobs:
             --suite-id "$AZDO_SUITE_ID" \
             --project-dir QA.Regression.Automation
       env:
-        GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
         BUILD_SOURCEBRANCH: $(Build.SourceBranch)
         AZDO_SUITE_ID: ${{ parameters.testSuite }}
 
@@ -246,6 +247,8 @@ jobs:
     pool:
       vmImage: windows-latest
     steps:
+    - checkout: self
+      persistCredentials: true
     - task: UsePythonVersion@0
       displayName: Use Python 3
       inputs:
@@ -299,7 +302,6 @@ jobs:
           python main.py commit-generated --suite-id "$env:AZDO_SUITE_ID" --project-dir QA.Regression.Automation
           if ($LASTEXITCODE -ne 0) { throw 'Committing generated Test Plan scripts failed.' }
       env:
-        GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
         BUILD_SOURCEBRANCH: $(Build.SourceBranch)
         AZDO_SUITE_ID: ${{ parameters.testSuite }}
 

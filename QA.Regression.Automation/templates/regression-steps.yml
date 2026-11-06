@@ -147,7 +147,6 @@ steps:
         --suite-id "$AZDO_SUITE_ID" \
         --project-dir QA.Regression.Automation
   env:
-    GITHUB_PUSH_TOKEN: $(GITHUB_PUSH_TOKEN)
     BUILD_SOURCEBRANCH: $(Build.SourceBranch)
     AZDO_SUITE_ID: $(AZDO_SUITE_ID)
 

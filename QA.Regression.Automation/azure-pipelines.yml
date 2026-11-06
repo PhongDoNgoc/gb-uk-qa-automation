@@ -26,6 +26,8 @@ jobs:
     pool:
       vmImage: ubuntu-latest
     steps:
+    - checkout: self
+      persistCredentials: true
     - template: templates/regression-steps.yml
 - ${{ if ne(parameters.targetEnvironment, 'PROD') }}:
   - job: RunRegression
@@ -42,4 +44,6 @@ jobs:
       - ${{ else }}:
         - Agent.Name -equals gbvmdsmanagerdne01
     steps:
+    - checkout: self
+      persistCredentials: true
     - template: templates/regression-steps.yml
