@@ -1,0 +1,212 @@
+steps:
+- task: Bash@3
+  displayName: Prepare Python and validate checked-in test scripts
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      if [[ -z "${AZDO_PAT:-}" || "${AZDO_PAT:-}" == '$('* ]]; then
+        echo "Azure pipeline secret variable AZDO_PAT is required."
+        exit 1
+      fi
+      : "${AZDO_PLAN_ID:?Azure Test Plan ID is required}"
+      : "${AZDO_SUITE_ID:?Azure Test Suite ID is required}"
+
+      if ! command -v python3 >/dev/null 2>&1; then
+        if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+          echo "Python 3 is required; passwordless sudo is unavailable to install it."
+          exit 1
+        fi
+        sudo -n apt-get update
+        sudo -n apt-get install -y python3 python3-venv
+      fi
+
+      if ! python3 -m venv .venv; then
+        if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+          echo "Python venv support is required; passwordless sudo is unavailable to install it."
+          exit 1
+        fi
+        python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+        sudo -n apt-get update
+        sudo -n apt-get install -y python3-venv "python${python_version}-venv"
+        rm -rf -- .venv
+        python3 -m venv .venv
+      fi
+
+      source .venv/bin/activate
+      python -m pip install --disable-pip-version-check -r requirements.txt
+      python -m unittest tests.test_automation_generator tests.test_automation_association tests.test_azure_serialization
+      python main.py validate-scripts \
+        --plan-id "$AZDO_PLAN_ID" \
+        --suite-id "$AZDO_SUITE_ID" \
+        --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json"
+  env:
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_PLAN_ID: $(AZDO_PLAN_ID)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+
+- task: Bash@3
+  displayName: Validate test settings
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      require_variable() {
+        local name="$1"
+        local value="${!name:-}"
+        if [[ -z "$value" || "$value" == '$('* ]]; then
+          echo "Pipeline variable ${name} is required."
+          exit 1
+        fi
+      }
+
+      require_variable VIEWPOINT_USERNAME
+      require_variable VIEWPOINT_PASSWORD
+      require_variable VIEWPOINT_INVALID_PASSWORD
+
+      url_variable="VIEWPOINT_BASE_URL_${TEST_TARGET_ENV}"
+      require_variable "$url_variable"
+
+      echo "Validated test settings for ${TEST_TARGET_ENV}."
+  env:
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
+- task: Bash@3
+  displayName: Check application connectivity
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      url_variable="VIEWPOINT_BASE_URL_${TEST_TARGET_ENV}"
+      base_url="${!url_variable}"
+
+      if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required to check ${TEST_TARGET_ENV} application connectivity."
+        exit 1
+      fi
+
+      echo "Checking connectivity to the ${TEST_TARGET_ENV} application."
+      if probe_result="$(curl \
+        --connect-timeout 10 \
+        --max-time 30 \
+        --silent \
+        --show-error \
+        --output /dev/null \
+        --write-out 'HTTP %{http_code}; remote IP %{remote_ip}; connect %{time_connect}s; TLS verify %{ssl_verify_result}; total %{time_total}s\n' \
+        "$base_url" 2>&1)"; then
+        echo "Connectivity probe completed: ${probe_result}"
+      else
+        curl_exit_code=$?
+        echo "Connectivity probe failed for ${TEST_TARGET_ENV} (curl exit code ${curl_exit_code})."
+        echo "${probe_result}"
+        exit "$curl_exit_code"
+      fi
+  env:
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
+- task: UseDotNet@2
+  displayName: Install .NET 10 SDK
+  inputs:
+    packageType: sdk
+    version: 10.0.x
+
+- task: DotNetCoreCLI@2
+  displayName: Restore test project
+  inputs:
+    command: restore
+    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
+
+- task: DotNetCoreCLI@2
+  displayName: Build generated test project
+  inputs:
+    command: build
+    projects: QA.Regression.Automation/QA.Regression.Automation.csproj
+    arguments: '--configuration $(buildConfiguration) --no-restore'
+
+- task: Bash@3
+  displayName: Install Playwright dependencies and Chromium
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      installer_project="tools/PlaywrightBrowserInstaller/PlaywrightBrowserInstaller.csproj"
+      installer_dll="tools/PlaywrightBrowserInstaller/bin/$(buildConfiguration)/net10.0/PlaywrightBrowserInstaller.dll"
+      dotnet build "$installer_project" --configuration "$(buildConfiguration)" --property:UseAppHost=false
+      dotnet_path="$(command -v dotnet)"
+      if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+        echo "Passwordless sudo is required to install Chromium's Linux system dependencies."
+        exit 1
+      fi
+      sudo -n "$dotnet_path" "$installer_dll" install-deps chromium
+      dotnet "$installer_dll" install chromium
+
+- task: Bash@3
+  displayName: Associate generated tests with Test Cases
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      source .venv/bin/activate
+      python main.py associate-scripts \
+        --manifest "QA.Regression.Automation/Tests/Generated/Suite${AZDO_SUITE_ID}/automation-manifest.json" \
+        --overwrite-association
+  env:
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+
+- task: Bash@3
+  displayName: Run checked-in tests and publish Azure Test Plan outcomes
+  inputs:
+    targetType: inline
+    script: |
+      set -euo pipefail
+      source .venv/bin/activate
+      python main.py run-test-plan \
+        --plan-id "$AZDO_PLAN_ID" \
+        --suite-id "$AZDO_SUITE_ID" \
+        --configuration-id "$AZDO_CONFIGURATION_ID" \
+        --test-project QA.Regression.Automation/QA.Regression.Automation.csproj \
+        --build-configuration "$BUILD_CONFIGURATION" \
+        --results-directory "$RESULTS_DIRECTORY"
+  env:
+    AZDO_ORG: $(AZDO_ORG)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_PLAN_ID: $(AZDO_PLAN_ID)
+    AZDO_SUITE_ID: $(AZDO_SUITE_ID)
+    AZDO_CONFIGURATION_ID: $(AZDO_CONFIGURATION_ID)
+    BUILD_CONFIGURATION: $(buildConfiguration)
+    RESULTS_DIRECTORY: $(Agent.TempDirectory)/TestResults
+    TEST_TARGET_ENV: $(TEST_TARGET_ENV)
+    VIEWPOINT_USERNAME: $(VIEWPOINT_USERNAME)
+    VIEWPOINT_PASSWORD: $(VIEWPOINT_PASSWORD)
+    VIEWPOINT_INVALID_PASSWORD: $(VIEWPOINT_INVALID_PASSWORD)
+    VIEWPOINT_INVALID_USERNAME: $(VIEWPOINT_INVALID_USERNAME)
+    VIEWPOINT_BASE_URL_PROD: $(VIEWPOINT_BASE_URL_PROD)
+    VIEWPOINT_BASE_URL_DEV: $(VIEWPOINT_BASE_URL_DEV)
+    VIEWPOINT_BASE_URL_STAGE: $(VIEWPOINT_BASE_URL_STAGE)
+
+- task: PublishTestResults@2
+  displayName: Publish NUnit results
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: $(Agent.TempDirectory)/TestResults
+    failTaskOnFailedTests: true
+    failTaskOnMissingResultsFile: true
+    publishRunAttachments: true

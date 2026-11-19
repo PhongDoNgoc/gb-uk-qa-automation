@@ -1,0 +1,58 @@
+trigger: none
+pr: none
+
+parameters:
+- name: testPlan
+  displayName: Azure Test Plan ID
+  type: string
+  default: '30985'
+- name: testSuite
+  displayName: Azure Test Suite ID
+  type: string
+  default: '31681'
+- name: testConfiguration
+  displayName: Azure Test Configuration ID
+  type: string
+  default: '188'
+- name: targetEnvironment
+  displayName: Target environment
+  type: string
+  default: DEV
+  values:
+  - PROD
+  - STAGE
+  - DEV
+
+variables:
+  buildConfiguration: Release
+  TEST_TARGET_ENV: ${{ parameters.targetEnvironment }}
+  AZDO_ORG: endeco-technologies
+  AZDO_PROJECT: 'Development Team'
+  AZDO_PLAN_ID: ${{ parameters.testPlan }}
+  AZDO_SUITE_ID: ${{ parameters.testSuite }}
+  AZDO_CONFIGURATION_ID: ${{ parameters.testConfiguration }}
+
+jobs:
+- ${{ if eq(parameters.targetEnvironment, 'PROD') }}:
+  - job: RunRegression
+    displayName: Run Playwright regression tests
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - template: templates/regression-steps.yml
+- ${{ if ne(parameters.targetEnvironment, 'PROD') }}:
+  - job: RunRegression
+    displayName: Run Playwright regression tests
+    pool:
+      ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        name: SelfHostedAP-Stg-NE-Swarm
+      ${{ else }}:
+        name: SelfHostedAP-Dev-NE-Swarm
+      demands:
+      - Agent.OS -equals Linux
+      - ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+        - Agent.Name -equals gbvmdsmanagersne01
+      - ${{ else }}:
+        - Agent.Name -equals gbvmdsmanagerdne01
+    steps:
+    - template: templates/regression-steps.yml

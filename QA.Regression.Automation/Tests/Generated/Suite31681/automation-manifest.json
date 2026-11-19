@@ -1,0 +1,254 @@
+{
+  "plan_id": 30985,
+  "suite_id": 31681,
+  "project_dir": "QA.Regression.Automation",
+  "assembly_name": "QA.Regression.Automation.dll",
+  "namespace": "QA.Regression.Automation.Tests.Generated.Suite31681",
+  "generated_count": 27,
+  "skipped_count": 0,
+  "tests": [
+    {
+      "test_case_id": 31682,
+      "title": "Verify user can successfully log in with valid credentials",
+      "strategy": "login-success",
+      "class_name": "Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests",
+      "method_name": "Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests.Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31682.cs"
+    },
+    {
+      "test_case_id": 31853,
+      "title": "Diagnostics - Verify GetCurrentUserInfo APIs on Diagnostics - History page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31853DiagnosticsVerifyGetCurrentUserInfoAPIsOnDiagnosticsHistoryPageIsWorkingTests",
+      "method_name": "Tc31853_DiagnosticsVerifyGetCurrentUserInfoAPIsOnDiagnosticsHistoryPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31853DiagnosticsVerifyGetCurrentUserInfoAPIsOnDiagnosticsHistoryPageIsWorkingTests.Tc31853_DiagnosticsVerifyGetCurrentUserInfoAPIsOnDiagnosticsHistoryPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31853.cs"
+    },
+    {
+      "test_case_id": 31854,
+      "title": "Portal Usage Report - Verify GetUserAnalytics API in Portal Usage Report page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31854PortalUsageReportVerifyGetUserAnalyticsAPIInPortalUsageReportPageIsWorkingTests",
+      "method_name": "Tc31854_PortalUsageReportVerifyGetUserAnalyticsAPIInPortalUsageReportPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31854PortalUsageReportVerifyGetUserAnalyticsAPIInPortalUsageReportPageIsWorkingTests.Tc31854_PortalUsageReportVerifyGetUserAnalyticsAPIInPortalUsageReportPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31854.cs"
+    },
+    {
+      "test_case_id": 31855,
+      "title": "Portal Usage Report - Verify 'Export to Excel' in Portal Usage Report page is working",
+      "strategy": "generic",
+      "class_name": "Tc31855PortalUsageReportVerifyExportToExcelInPortalUsageReportPageIsWorkingTests",
+      "method_name": "Tc31855_PortalUsageReportVerifyExportToExcelInPortalUsageReportPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31855PortalUsageReportVerifyExportToExcelInPortalUsageReportPageIsWorkingTests.Tc31855_PortalUsageReportVerifyExportToExcelInPortalUsageReportPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31855.cs"
+    },
+    {
+      "test_case_id": 31856,
+      "title": "Payment Availability  - Verify View Payment Availability in Payment Availability  page is working",
+      "strategy": "generic",
+      "class_name": "Tc31856PaymentAvailabilityVerifyViewPaymentAvailabilityInPaymentAvailabilityPageIsWorkingTests",
+      "method_name": "Tc31856_PaymentAvailabilityVerifyViewPaymentAvailabilityInPaymentAvailabilityPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31856PaymentAvailabilityVerifyViewPaymentAvailabilityInPaymentAvailabilityPageIsWorkingTests.Tc31856_PaymentAvailabilityVerifyViewPaymentAvailabilityInPaymentAvailabilityPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31856.cs"
+    },
+    {
+      "test_case_id": 31857,
+      "title": "Payment Availability  - Verify 'Export to Excel' in Payment Availability  page is working",
+      "strategy": "generic",
+      "class_name": "Tc31857PaymentAvailabilityVerifyExportToExcelInPaymentAvailabilityPageIsWorkingTests",
+      "method_name": "Tc31857_PaymentAvailabilityVerifyExportToExcelInPaymentAvailabilityPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31857PaymentAvailabilityVerifyExportToExcelInPaymentAvailabilityPageIsWorkingTests.Tc31857_PaymentAvailabilityVerifyExportToExcelInPaymentAvailabilityPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31857.cs"
+    },
+    {
+      "test_case_id": 31858,
+      "title": "Payment Availability  - Verify View Summary Table in Payment Availability  page is working",
+      "strategy": "generic",
+      "class_name": "Tc31858PaymentAvailabilityVerifyViewSummaryTableInPaymentAvailabilityPageIsWorkingTests",
+      "method_name": "Tc31858_PaymentAvailabilityVerifyViewSummaryTableInPaymentAvailabilityPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31858PaymentAvailabilityVerifyViewSummaryTableInPaymentAvailabilityPageIsWorkingTests.Tc31858_PaymentAvailabilityVerifyViewSummaryTableInPaymentAvailabilityPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31858.cs"
+    },
+    {
+      "test_case_id": 31861,
+      "title": "Customer Details - Verify EnergyServiceDetails API in Customer Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31861CustomerDetailsVerifyEnergyServiceDetailsAPIInCustomerDetailsPageIsWorkingTests",
+      "method_name": "Tc31861_CustomerDetailsVerifyEnergyServiceDetailsAPIInCustomerDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31861CustomerDetailsVerifyEnergyServiceDetailsAPIInCustomerDetailsPageIsWorkingTests.Tc31861_CustomerDetailsVerifyEnergyServiceDetailsAPIInCustomerDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31861.cs"
+    },
+    {
+      "test_case_id": 31862,
+      "title": "Customer Details - Verify RootDetails API in Customer Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31862CustomerDetailsVerifyRootDetailsAPIInCustomerDetailsPageIsWorkingTests",
+      "method_name": "Tc31862_CustomerDetailsVerifyRootDetailsAPIInCustomerDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31862CustomerDetailsVerifyRootDetailsAPIInCustomerDetailsPageIsWorkingTests.Tc31862_CustomerDetailsVerifyRootDetailsAPIInCustomerDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31862.cs"
+    },
+    {
+      "test_case_id": 31863,
+      "title": "Customer Details - Verify SiteDetails API in Customer Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31863CustomerDetailsVerifySiteDetailsAPIInCustomerDetailsPageIsWorkingTests",
+      "method_name": "Tc31863_CustomerDetailsVerifySiteDetailsAPIInCustomerDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31863CustomerDetailsVerifySiteDetailsAPIInCustomerDetailsPageIsWorkingTests.Tc31863_CustomerDetailsVerifySiteDetailsAPIInCustomerDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31863.cs"
+    },
+    {
+      "test_case_id": 31864,
+      "title": "Customer Details - Verify SegmentDetails API in Customer Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31864CustomerDetailsVerifySegmentDetailsAPIInCustomerDetailsPageIsWorkingTests",
+      "method_name": "Tc31864_CustomerDetailsVerifySegmentDetailsAPIInCustomerDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31864CustomerDetailsVerifySegmentDetailsAPIInCustomerDetailsPageIsWorkingTests.Tc31864_CustomerDetailsVerifySegmentDetailsAPIInCustomerDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31864.cs"
+    },
+    {
+      "test_case_id": 31865,
+      "title": "Unit Details - Verify Export  function in Unit Details page is working",
+      "strategy": "generic",
+      "class_name": "Tc31865UnitDetailsVerifyExportFunctionInUnitDetailsPageIsWorkingTests",
+      "method_name": "Tc31865_UnitDetailsVerifyExportFunctionInUnitDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31865UnitDetailsVerifyExportFunctionInUnitDetailsPageIsWorkingTests.Tc31865_UnitDetailsVerifyExportFunctionInUnitDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31865.cs"
+    },
+    {
+      "test_case_id": 31866,
+      "title": "Unit Details - Verify Refresh in Unit Details page is working",
+      "strategy": "generic",
+      "class_name": "Tc31866UnitDetailsVerifyRefreshInUnitDetailsPageIsWorkingTests",
+      "method_name": "Tc31866_UnitDetailsVerifyRefreshInUnitDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31866UnitDetailsVerifyRefreshInUnitDetailsPageIsWorkingTests.Tc31866_UnitDetailsVerifyRefreshInUnitDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31866.cs"
+    },
+    {
+      "test_case_id": 31867,
+      "title": "Unit Details - Verify GetMarketUnit API in Unit Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31867UnitDetailsVerifyGetMarketUnitAPIInUnitDetailsPageIsWorkingTests",
+      "method_name": "Tc31867_UnitDetailsVerifyGetMarketUnitAPIInUnitDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31867UnitDetailsVerifyGetMarketUnitAPIInUnitDetailsPageIsWorkingTests.Tc31867_UnitDetailsVerifyGetMarketUnitAPIInUnitDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31867.cs"
+    },
+    {
+      "test_case_id": 31868,
+      "title": "Unit Details - Verify GetControlUnit API in Unit Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31868UnitDetailsVerifyGetControlUnitAPIInUnitDetailsPageIsWorkingTests",
+      "method_name": "Tc31868_UnitDetailsVerifyGetControlUnitAPIInUnitDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31868UnitDetailsVerifyGetControlUnitAPIInUnitDetailsPageIsWorkingTests.Tc31868_UnitDetailsVerifyGetControlUnitAPIInUnitDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31868.cs"
+    },
+    {
+      "test_case_id": 31869,
+      "title": "Unit Details - Verify GetCustomerDetail API in Unit Details page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31869UnitDetailsVerifyGetCustomerDetailAPIInUnitDetailsPageIsWorkingTests",
+      "method_name": "Tc31869_UnitDetailsVerifyGetCustomerDetailAPIInUnitDetailsPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31869UnitDetailsVerifyGetCustomerDetailAPIInUnitDetailsPageIsWorkingTests.Tc31869_UnitDetailsVerifyGetCustomerDetailAPIInUnitDetailsPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31869.cs"
+    },
+    {
+      "test_case_id": 31870,
+      "title": "Collector Run - Verify LoadSiteProfile API in Collector Scheduling page is working, returning status 200",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31870CollectorRunVerifyLoadSiteProfileAPIInCollectorSchedulingPageIsWorkingReturningStatus200Tests",
+      "method_name": "Tc31870_CollectorRunVerifyLoadSiteProfileAPIInCollectorSchedulingPageIsWorkingReturningStatus200",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31870CollectorRunVerifyLoadSiteProfileAPIInCollectorSchedulingPageIsWorkingReturningStatus200Tests.Tc31870_CollectorRunVerifyLoadSiteProfileAPIInCollectorSchedulingPageIsWorkingReturningStatus200",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31870.cs"
+    },
+    {
+      "test_case_id": 31871,
+      "title": "Collector Run - Verify LoadCollectorSchedulingGrid API in Collector Scheduling page is working, returning status 200",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc31871Tests",
+      "method_name": "Tc31871_CollectorRunVerifyLoadCollectorSchedulingGridAPIInCollectorSchedulingPageIsWorkingReturningStatus200",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31871Tests.Tc31871_CollectorRunVerifyLoadCollectorSchedulingGridAPIInCollectorSchedulingPageIsWorkingReturningStatus200",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31871.cs"
+    },
+    {
+      "test_case_id": 31988,
+      "title": "Verify user cannot log in with invalid credentials",
+      "strategy": "login-failure",
+      "class_name": "Tc31988VerifyUserCannotLogInWithInvalidCredentialsTests",
+      "method_name": "Tc31988_VerifyUserCannotLogInWithInvalidCredentials",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc31988VerifyUserCannotLogInWithInvalidCredentialsTests.Tc31988_VerifyUserCannotLogInWithInvalidCredentials",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc31988.cs"
+    },
+    {
+      "test_case_id": 32059,
+      "title": "Payment Availability  - Verify GetSummaryPaymentAvailability API on Payment Availability page are working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc32059Tests",
+      "method_name": "Tc32059_PaymentAvailabilityVerifyGetSummaryPaymentAvailabilityAPIOnPaymentAvailabilityPageAreWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc32059Tests.Tc32059_PaymentAvailabilityVerifyGetSummaryPaymentAvailabilityAPIOnPaymentAvailabilityPageAreWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc32059.cs"
+    },
+    {
+      "test_case_id": 33984,
+      "title": "Diagnostics - Verify GetSites API on Diagnostics - History page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33984DiagnosticsVerifyGetSitesAPIOnDiagnosticsHistoryPageIsWorkingTests",
+      "method_name": "Tc33984_DiagnosticsVerifyGetSitesAPIOnDiagnosticsHistoryPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33984DiagnosticsVerifyGetSitesAPIOnDiagnosticsHistoryPageIsWorkingTests.Tc33984_DiagnosticsVerifyGetSitesAPIOnDiagnosticsHistoryPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33984.cs"
+    },
+    {
+      "test_case_id": 33985,
+      "title": "Diagnostics - Verify GetCustomersWithSessionsOnly API on Diagnostics - History page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33985DiagnosticsVerifyGetCustomersWithSessionsOnlyAPIOnDiagnosticsHistoryPageIsWorkingTests",
+      "method_name": "Tc33985_DiagnosticsVerifyGetCustomersWithSessionsOnlyAPIOnDiagnosticsHistoryPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33985DiagnosticsVerifyGetCustomersWithSessionsOnlyAPIOnDiagnosticsHistoryPageIsWorkingTests.Tc33985_DiagnosticsVerifyGetCustomersWithSessionsOnlyAPIOnDiagnosticsHistoryPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33985.cs"
+    },
+    {
+      "test_case_id": 33986,
+      "title": "Diagnostics - Verify GetStepsForModal API on Diagnostics - History page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33986DiagnosticsVerifyGetStepsForModalAPIOnDiagnosticsHistoryPageIsWorkingTests",
+      "method_name": "Tc33986_DiagnosticsVerifyGetStepsForModalAPIOnDiagnosticsHistoryPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33986DiagnosticsVerifyGetStepsForModalAPIOnDiagnosticsHistoryPageIsWorkingTests.Tc33986_DiagnosticsVerifyGetStepsForModalAPIOnDiagnosticsHistoryPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33986.cs"
+    },
+    {
+      "test_case_id": 33987,
+      "title": "Diagnostics - Verify GetAllDiagnosticsSessions API on Diagnostics - History page is working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33987DiagnosticsVerifyGetAllDiagnosticsSessionsAPIOnDiagnosticsHistoryPageIsWorkingTests",
+      "method_name": "Tc33987_DiagnosticsVerifyGetAllDiagnosticsSessionsAPIOnDiagnosticsHistoryPageIsWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33987DiagnosticsVerifyGetAllDiagnosticsSessionsAPIOnDiagnosticsHistoryPageIsWorkingTests.Tc33987_DiagnosticsVerifyGetAllDiagnosticsSessionsAPIOnDiagnosticsHistoryPageIsWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33987.cs"
+    },
+    {
+      "test_case_id": 33988,
+      "title": "Payment Availability  - Verify GetPagingRecords API on Payment Availability page are working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33988PaymentAvailabilityVerifyGetPagingRecordsAPIOnPaymentAvailabilityPageAreWorkingTests",
+      "method_name": "Tc33988_PaymentAvailabilityVerifyGetPagingRecordsAPIOnPaymentAvailabilityPageAreWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33988PaymentAvailabilityVerifyGetPagingRecordsAPIOnPaymentAvailabilityPageAreWorkingTests.Tc33988_PaymentAvailabilityVerifyGetPagingRecordsAPIOnPaymentAvailabilityPageAreWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33988.cs"
+    },
+    {
+      "test_case_id": 33989,
+      "title": "Payment Availability  - Verify GetEnergyServiceByCountryId API on Payment Availability page are working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33989PaymentAvailabilityVerifyGetEnergyServiceByCountryIdAPIOnPaymentAvailabilityPageAreWorkingTests",
+      "method_name": "Tc33989_PaymentAvailabilityVerifyGetEnergyServiceByCountryIdAPIOnPaymentAvailabilityPageAreWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33989PaymentAvailabilityVerifyGetEnergyServiceByCountryIdAPIOnPaymentAvailabilityPageAreWorkingTests.Tc33989_PaymentAvailabilityVerifyGetEnergyServiceByCountryIdAPIOnPaymentAvailabilityPageAreWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33989.cs"
+    },
+    {
+      "test_case_id": 33990,
+      "title": "Payment Availability  - Verify GetPeriodByCountryAndEnergyService API on Payment Availability page are working",
+      "strategy": "authenticated-api-status",
+      "class_name": "Tc33990Tests",
+      "method_name": "Tc33990_PaymentAvailabilityVerifyGetPeriodByCountryAndEnergyServiceAPIOnPaymentAvailabilityPageAreWorking",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite31681.Tc33990Tests.Tc33990_PaymentAvailabilityVerifyGetPeriodByCountryAndEnergyServiceAPIOnPaymentAvailabilityPageAreWorking",
+      "file_path": "QA.Regression.Automation\\Tests\\Generated\\Suite31681\\Tc33990.cs"
+    }
+  ]
+}
