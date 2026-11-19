@@ -1,0 +1,29 @@
+{
+  "plan_id": 30985,
+  "suite_id": 34466,
+  "project_dir": "QA.Regression.Automation",
+  "assembly_name": "QA.Regression.Automation.dll",
+  "namespace": "QA.Regression.Automation.Tests.Generated.Suite34466",
+  "generated_count": 2,
+  "skipped_count": 0,
+  "tests": [
+    {
+      "test_case_id": 31682,
+      "title": "Verify user can successfully log in with valid credentials",
+      "strategy": "login-success",
+      "class_name": "Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests",
+      "method_name": "Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite34466.Tc31682VerifyUserCanSuccessfullyLogInWithValidCredentialsTests.Tc31682_VerifyUserCanSuccessfullyLogInWithValidCredentials",
+      "file_path": "QA.Regression.Automation/Tests/Generated/Suite34466/Tc31682.cs"
+    },
+    {
+      "test_case_id": 31988,
+      "title": "Verify user cannot log in with invalid credentials",
+      "strategy": "login-failure",
+      "class_name": "Tc31988VerifyUserCannotLogInWithInvalidCredentialsTests",
+      "method_name": "Tc31988_VerifyUserCannotLogInWithInvalidCredentials",
+      "fully_qualified_name": "QA.Regression.Automation.Tests.Generated.Suite34466.Tc31988VerifyUserCannotLogInWithInvalidCredentialsTests.Tc31988_VerifyUserCannotLogInWithInvalidCredentials",
+      "file_path": "QA.Regression.Automation/Tests/Generated/Suite34466/Tc31988.cs"
+    }
+  ]
+}
